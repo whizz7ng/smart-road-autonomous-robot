@@ -24,6 +24,7 @@ setup(
     },
     entry_points={
         'console_scripts': [
+            'yolo_detector = perception.yolo_detector:main'
         ],
-    },
+    }
 )

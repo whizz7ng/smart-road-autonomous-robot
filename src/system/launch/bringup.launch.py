@@ -36,7 +36,7 @@ def generate_launch_description():
         executable='yolo_detector',
         name='yolo_detector',
         output='screen',
-        condition=IfCondition('false'),  # 노드 개발 완료 후 'true'로 변경
+        condition=IfCondition('true'),  # 노드 개발 완료 후 'true'로 변경
     )
 
     # TODO: Eng B (Control) - FSM/PID 제어 노드 등록 예정
