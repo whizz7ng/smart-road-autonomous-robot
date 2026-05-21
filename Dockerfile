@@ -55,13 +55,23 @@ RUN pip3 install --no-cache-dir --break-system-packages \
     pyserial \
     ncnn
 
-# --- 4) ROS 2 환경 자동 source ---
-RUN echo "source /opt/ros/jazzy/setup.bash" >> /root/.bashrc \
-    && echo "[ -f /ros2_ws/install/setup.bash ] && source /ros2_ws/install/setup.bash" >> /root/.bashrc \
-    && echo "export ROS_DOMAIN_ID=42" >> /root/.bashrc
+# --- 4) ROS 2 환경 자동 source (ubuntu 유저용) ---
+RUN echo "source /opt/ros/jazzy/setup.bash" >> /home/ubuntu/.bashrc \
+    && echo "[ -f /ros2_ws/install/setup.bash ] && source /ros2_ws/install/setup.bash" >> /home/ubuntu/.bashrc \
+    && echo "export ROS_DOMAIN_ID=42" >> /home/ubuntu/.bashrc \
+    && chown ubuntu:ubuntu /home/ubuntu/.bashrc
 
 # --- 5) 작업 디렉토리 ---
 WORKDIR /ros2_ws
+
+# --- 5-1) ubuntu 유저에게 sudo 권한 + /ros2_ws 소유권 부여 ---
+RUN echo "ubuntu ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/ubuntu \
+    && chmod 0440 /etc/sudoers.d/ubuntu \
+    && mkdir -p /ros2_ws \
+    && chown -R ubuntu:ubuntu /ros2_ws
+
+# --- 5-2) ubuntu 유저로 전환 ---
+USER ubuntu
 
 # --- 6) 기본 진입점 ---
 CMD ["/bin/bash"]
