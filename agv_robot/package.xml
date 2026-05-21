@@ -1,0 +1,20 @@
+<?xml version="1.0"?>
+<package format="3">
+  <name>agv_robot</name>
+  <version>0.1.0</version>
+  <description>AGV Robot URDF - ROS2 Jazzy + Gazebo Harmonic</description>
+  <maintainer email="user@example.com">user</maintainer>
+  <license>MIT</license>
+
+  <buildtool_depend>ament_cmake</buildtool_depend>
+
+  <depend>robot_state_publisher</depend>
+  <depend>joint_state_publisher</depend>
+  <depend>xacro</depend>
+  <depend>ros_gz_sim</depend>
+  <depend>ros_gz_bridge</depend>
+
+  <export>
+    <build_type>ament_cmake</build_type>
+  </export>
+</package>
