@@ -75,15 +75,17 @@
   <link name="lower_plate">
     <visual>
       <geometry>
-        <cylinder radius="${platform_radius}" length="${platform_thickness}"/>
+        <box size="${2*platform_radius} ${wheel_track - wheel_width - 0.010} ${platform_thickness}"/>
       </geometry>
       <material name="dark_gray">
         <color rgba="0.3 0.3 0.3 1.0"/>
       </material>
     </visual>
+    <!-- collision: 바퀴(wheel_width/2 + 5mm 여유) 구간을 제외한 중앙 box로 근사 -->
+    <!-- Y폭 = 2 * (wheel_track/2 - wheel_width/2 - 0.005) = 0.219m -->
     <collision>
       <geometry>
-        <cylinder radius="${platform_radius}" length="${platform_thickness}"/>
+        <box size="${2*platform_radius} ${wheel_track - wheel_width - 0.010} ${platform_thickness}"/>
       </geometry>
     </collision>
     <xacro:inertia_cylinder mass="0.8" r="${platform_radius}" l="${platform_thickness}"/>

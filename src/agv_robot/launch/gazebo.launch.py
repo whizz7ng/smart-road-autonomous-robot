@@ -9,7 +9,8 @@ from launch_ros.actions import Node
 
 def generate_launch_description():
     pkg_dir = get_package_share_directory('agv_robot')
-    xacro_file = os.path.join(pkg_dir, 'urdf', 'agv_robot.urdf.xacro')
+    xacro_file = os.path.join(pkg_dir, 'urdf', 'agv_robot_urdf.xacro')
+    world_file = os.path.join(pkg_dir, 'worlds', 'agv_track.sdf')
 
     # xacro → URDF 변환
     robot_description = subprocess.check_output(
@@ -28,7 +29,7 @@ def generate_launch_description():
         }]
     )
 
-    # Gazebo Harmonic 실행
+    # Gazebo Harmonic - 절대경로로 world 지정
     gazebo = IncludeLaunchDescription(
         PythonLaunchDescriptionSource([
             os.path.join(
@@ -36,12 +37,12 @@ def generate_launch_description():
                 'launch', 'gz_sim.launch.py'
             )
         ]),
-        launch_arguments={'gz_args': '-r empty.sdf'}.items(),
+        launch_arguments={'gz_args': f'-r {world_file}'}.items(),
     )
 
-    # 로봇 스폰 (Gazebo 뜨고 나서 실행되도록 3초 딜레이)
+    # 로봇 스폰 (Gazebo 뜨고 나서)
     spawn_entity = TimerAction(
-        period=3.0,
+        period=5.0,
         actions=[
             Node(
                 package='ros_gz_sim',
@@ -58,7 +59,7 @@ def generate_launch_description():
         ]
     )
 
-    # ROS ↔ Gazebo 토픽 브릿지
+    # ROS ↔ Gazebo 브릿지
     bridge = Node(
         package='ros_gz_bridge',
         executable='parameter_bridge',
