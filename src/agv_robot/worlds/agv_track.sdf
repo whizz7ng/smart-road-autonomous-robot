@@ -1,0 +1,617 @@
+<?xml version="1.0"?>
+<sdf version="1.8">
+  <world name="agv_track">
+
+    <physics name="default" type="ode">
+      <max_step_size>0.001</max_step_size>
+      <real_time_factor>1</real_time_factor>
+    </physics>
+
+    <plugin filename="gz-sim-physics-system"
+            name="gz::sim::systems::Physics"/>
+    <plugin filename="gz-sim-scene-broadcaster-system"
+            name="gz::sim::systems::SceneBroadcaster"/>
+    <plugin filename="gz-sim-user-commands-system"
+            name="gz::sim::systems::UserCommands"/>
+    <plugin filename="gz-sim-sensors-system"
+            name="gz::sim::systems::Sensors">
+      <render_engine>ogre2</render_engine>
+    </plugin>
+
+    <light name="sun" type="directional">
+      <cast_shadows>true</cast_shadows>
+      <pose>0 0 10 0 0 0</pose>
+      <diffuse>0.9 0.9 0.9 1</diffuse>
+      <specular>0.2 0.2 0.2 1</specular>
+      <direction>-0.5 0.1 -0.9</direction>
+    </light>
+
+    <model name="ground_plane">
+      <static>true</static>
+      <link name="link">
+        <collision name="col">
+          <geometry><plane><normal>0 0 1</normal><size>30 30</size></plane></geometry>
+        </collision>
+        <visual name="vis">
+          <geometry><plane><normal>0 0 1</normal><size>30 30</size></plane></geometry>
+          <material>
+            <ambient>0.95 0.95 0.95 1</ambient>
+            <diffuse>0.95 0.95 0.95 1</diffuse>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <model name="vert_left_bot">
+      <static>true</static>
+      <pose>-0.0650 1.8300 0.0005 0 0 0</pose>
+      <link name="link">
+        <collision name="col">
+          <geometry><box><size>0.0250 3.6600 0.001</size></box></geometry>
+        </collision>
+        <visual name="vis">
+          <geometry><box><size>0.0250 3.6600 0.001</size></box></geometry>
+          <material>
+            <ambient>1.0 0.9 0.0 1</ambient>
+            <diffuse>1.0 0.9 0.0 1</diffuse>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <model name="vert_left_top">
+      <static>true</static>
+      <pose>-0.0650 5.4600 0.0005 0 0 0</pose>
+      <link name="link">
+        <collision name="col">
+          <geometry><box><size>0.0250 2.8700 0.001</size></box></geometry>
+        </collision>
+        <visual name="vis">
+          <geometry><box><size>0.0250 2.8700 0.001</size></box></geometry>
+          <material>
+            <ambient>1.0 0.9 0.0 1</ambient>
+            <diffuse>1.0 0.9 0.0 1</diffuse>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <model name="vert_right_bot">
+      <static>true</static>
+      <pose>1.2660 1.8300 0.0005 0 0 0</pose>
+      <link name="link">
+        <collision name="col">
+          <geometry><box><size>0.0250 3.6600 0.001</size></box></geometry>
+        </collision>
+        <visual name="vis">
+          <geometry><box><size>0.0250 3.6600 0.001</size></box></geometry>
+          <material>
+            <ambient>1.0 0.9 0.0 1</ambient>
+            <diffuse>1.0 0.9 0.0 1</diffuse>
+          </material>
+        </visual>
+      </link>
+    </model>
+    <model name="vert_right_top_a">
+      <static>true</static>
+      <pose>1.266 4.7000 0.0005 0 0 0</pose>
+      <link name="link">
+        <collision name="col">
+          <geometry><box><size>0.025 1.3500 0.001</size></box></geometry>
+        </collision>
+        <visual name="vis">
+          <geometry><box><size>0.025 1.3500 0.001</size></box></geometry>
+          <material><ambient>1 0.9 0 1</ambient><diffuse>1 0.9 0 1</diffuse></material>
+        </visual>
+      </link>
+    </model>
+    <model name="vert_right_top_b">
+      <static>true</static>
+      <pose>1.266 6.3475 0.0005 0 0 0</pose>
+      <link name="link">
+        <collision name="col">
+          <geometry><box><size>0.025 1.0950 0.001</size></box></geometry>
+        </collision>
+        <visual name="vis">
+          <geometry><box><size>0.025 1.0950 0.001</size></box></geometry>
+          <material><ambient>1 0.9 0 1</ambient><diffuse>1 0.9 0 1</diffuse></material>
+        </visual>
+      </link>
+    </model>
+
+    <model name="vert_bottom">
+      <static>true</static>
+      <pose>0.6005 0.0000 0.0005 0 0 0</pose>
+      <link name="link">
+        <collision name="col">
+          <geometry><box><size>1.3310 0.0250 0.001</size></box></geometry>
+        </collision>
+        <visual name="vis">
+          <geometry><box><size>1.3310 0.0250 0.001</size></box></geometry>
+          <material>
+            <ambient>1.0 0.9 0.0 1</ambient>
+            <diffuse>1.0 0.9 0.0 1</diffuse>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <model name="horiz_top">
+      <static>true</static>
+      <pose>0.4100 7.8150 0.0005 0 0 0</pose>
+      <link name="link">
+        <collision name="col">
+          <geometry><box><size>3.6000 0.0250 0.001</size></box></geometry>
+        </collision>
+        <visual name="vis">
+          <geometry><box><size>3.6000 0.0250 0.001</size></box></geometry>
+          <material>
+            <ambient>1.0 0.9 0.0 1</ambient>
+            <diffuse>1.0 0.9 0.0 1</diffuse>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <model name="horiz_left">
+      <static>true</static>
+      <pose>-1.3900 7.3550 0.0005 0 0 0</pose>
+      <link name="link">
+        <collision name="col">
+          <geometry><box><size>0.0250 0.9200 0.001</size></box></geometry>
+        </collision>
+        <visual name="vis">
+          <geometry><box><size>0.0250 0.9200 0.001</size></box></geometry>
+          <material>
+            <ambient>0.8 0.0 0.0 1</ambient>
+            <diffuse>0.8 0.0 0.0 1</diffuse>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+
+    <model name="horiz_bot_left">
+      <static>true</static>
+      <pose>-0.7275 6.8950 0.0005 0 0 0</pose>
+      <link name="link">
+        <collision name="col">
+          <geometry><box><size>1.3250 0.0250 0.001</size></box></geometry>
+        </collision>
+        <visual name="vis">
+          <geometry><box><size>1.3250 0.0250 0.001</size></box></geometry>
+          <material>
+            <ambient>1.0 0.9 0.0 1</ambient>
+            <diffuse>1.0 0.9 0.0 1</diffuse>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <model name="horiz_bot_right">
+      <static>true</static>
+      <pose>1.7380 6.8950 0.0005 0 0 0</pose>
+      <link name="link">
+        <collision name="col">
+          <geometry><box><size>0.9440 0.0250 0.001</size></box></geometry>
+        </collision>
+        <visual name="vis">
+          <geometry><box><size>0.9440 0.0250 0.001</size></box></geometry>
+          <material>
+            <ambient>1.0 0.9 0.0 1</ambient>
+            <diffuse>1.0 0.9 0.0 1</diffuse>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <model name="right_line1">
+      <static>true</static>
+      <pose>1.7380 5.3750 0.0005 0 0 0</pose>
+      <link name="link">
+        <collision name="col">
+          <geometry><box><size>0.9440 0.0250 0.001</size></box></geometry>
+        </collision>
+        <visual name="vis">
+          <geometry><box><size>0.9440 0.0250 0.001</size></box></geometry>
+          <material>
+            <ambient>1.0 0.9 0.0 1</ambient>
+            <diffuse>1.0 0.9 0.0 1</diffuse>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <model name="right_line2">
+      <static>true</static>
+      <pose>1.7380 5.8000 0.0005 0 0 0</pose>
+      <link name="link">
+        <collision name="col">
+          <geometry><box><size>0.9440 0.0250 0.001</size></box></geometry>
+        </collision>
+        <visual name="vis">
+          <geometry><box><size>0.9440 0.0250 0.001</size></box></geometry>
+          <material>
+            <ambient>1.0 0.9 0.0 1</ambient>
+            <diffuse>1.0 0.9 0.0 1</diffuse>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+
+    <model name="vert_inner_bot">
+      <static>true</static>
+      <pose>0.4220 1.8300 0.0005 0 0 0</pose>
+      <link name="link">
+        <collision name="col">
+          <geometry><box><size>0.0250 3.6600 0.001</size></box></geometry>
+        </collision>
+        <visual name="vis">
+          <geometry><box><size>0.0250 3.6600 0.001</size></box></geometry>
+          <material>
+            <ambient>1.0 1.0 0.0 1</ambient>
+            <diffuse>1.0 1.0 0.0 1</diffuse>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <model name="vert_inner_top">
+      <static>true</static>
+      <pose>0.4220 5.4600 0.0005 0 0 0</pose>
+      <link name="link">
+        <collision name="col">
+          <geometry><box><size>0.0250 2.8700 0.001</size></box></geometry>
+        </collision>
+        <visual name="vis">
+          <geometry><box><size>0.0250 2.8700 0.001</size></box></geometry>
+          <material>
+            <ambient>1.0 1.0 0.0 1</ambient>
+            <diffuse>1.0 1.0 0.0 1</diffuse>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <model name="horiz_inner_left">
+      <static>true</static>
+      <pose>-0.7275 7.3650 0.0005 0 0 0</pose>
+      <link name="link">
+        <collision name="col">
+          <geometry><box><size>1.3250 0.0250 0.001</size></box></geometry>
+        </collision>
+        <visual name="vis">
+          <geometry><box><size>1.3250 0.0250 0.001</size></box></geometry>
+          <material>
+            <ambient>0.8 0.0 0.0 1</ambient>
+            <diffuse>0.8 0.0 0.0 1</diffuse>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <model name="horiz_inner_right">
+      <static>true</static>
+      <pose>1.7380 7.3650 0.0005 0 0 0</pose>
+      <link name="link">
+        <collision name="col">
+          <geometry><box><size>0.9440 0.0250 0.001</size></box></geometry>
+        </collision>
+        <visual name="vis">
+          <geometry><box><size>0.9440 0.0250 0.001</size></box></geometry>
+          <material>
+            <ambient>0.8 0.0 0.0 1</ambient>
+            <diffuse>0.8 0.0 0.0 1</diffuse>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <model name="horiz_vert_inner_left">
+      <static>true</static>
+      <pose>-0.5150 7.3550 0.0005 0 0 0</pose>
+      <link name="link">
+        <collision name="col">
+          <geometry><box><size>0.0250 0.9200 0.001</size></box></geometry>
+        </collision>
+        <visual name="vis">
+          <geometry><box><size>0.0250 0.9200 0.001</size></box></geometry>
+          <material>
+            <ambient>0.8 0.0 0.0 1</ambient>
+            <diffuse>0.8 0.0 0.0 1</diffuse>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <model name="horiz_vert_inner_right">
+      <static>true</static>
+      <pose>1.7350 7.3550 0.0005 0 0 0</pose>
+      <link name="link">
+        <collision name="col">
+          <geometry><box><size>0.0250 0.9200 0.001</size></box></geometry>
+        </collision>
+        <visual name="vis">
+          <geometry><box><size>0.0250 0.9200 0.001</size></box></geometry>
+          <material>
+            <ambient>0.8 0.0 0.0 1</ambient>
+            <diffuse>0.8 0.0 0.0 1</diffuse>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <model name="crosswalk_top_line">
+      <static>true</static>
+      <pose>0.6005 3.1600 0.0005 0 0 0</pose>
+      <link name="link">
+        <collision name="col">
+          <geometry><box><size>1.3310 0.0250 0.001</size></box></geometry>
+        </collision>
+        <visual name="vis">
+          <geometry><box><size>1.3310 0.0250 0.001</size></box></geometry>
+          <material>
+            <ambient>0.8 0.0 0.0 1</ambient>
+            <diffuse>0.8 0.0 0.0 1</diffuse>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <model name="crosswalk_bot_line">
+      <static>true</static>
+      <pose>0.6005 6.4700 0.0005 0 0 0</pose>
+      <link name="link">
+        <collision name="col">
+          <geometry><box><size>1.3310 0.0250 0.001</size></box></geometry>
+        </collision>
+        <visual name="vis">
+          <geometry><box><size>1.3310 0.0250 0.001</size></box></geometry>
+          <material>
+            <ambient>0.8 0.0 0.0 1</ambient>
+            <diffuse>0.8 0.0 0.0 1</diffuse>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <model name="crosswalk_01">
+      <static>true</static>
+      <pose>0.0175 3.8425 0.0005 0 0 0</pose>
+      <link name="link">
+        <collision name="col">
+          <geometry><box><size>0.025 0.365 0.001</size></box></geometry>
+        </collision>
+        <visual name="vis">
+          <geometry><box><size>0.025 0.365 0.001</size></box></geometry>
+          <material><ambient>0 0 0 1</ambient><diffuse>0 0 0 1</diffuse></material>
+        </visual>
+      </link>
+    </model>
+
+    <model name="crosswalk_02">
+      <static>true</static>
+      <pose>0.1425 3.8425 0.0005 0 0 0</pose>
+      <link name="link">
+        <collision name="col">
+          <geometry><box><size>0.025 0.365 0.001</size></box></geometry>
+        </collision>
+        <visual name="vis">
+          <geometry><box><size>0.025 0.365 0.001</size></box></geometry>
+          <material><ambient>0 0 0 1</ambient><diffuse>0 0 0 1</diffuse></material>
+        </visual>
+      </link>
+    </model>
+
+    <model name="crosswalk_03">
+      <static>true</static>
+      <pose>0.2675 3.8425 0.0005 0 0 0</pose>
+      <link name="link">
+        <collision name="col">
+          <geometry><box><size>0.025 0.365 0.001</size></box></geometry>
+        </collision>
+        <visual name="vis">
+          <geometry><box><size>0.025 0.365 0.001</size></box></geometry>
+          <material><ambient>0 0 0 1</ambient><diffuse>0 0 0 1</diffuse></material>
+        </visual>
+      </link>
+    </model>
+
+    <model name="crosswalk_04">
+      <static>true</static>
+      <pose>0.3925 3.8425 0.0005 0 0 0</pose>
+      <link name="link">
+        <collision name="col">
+          <geometry><box><size>0.025 0.365 0.001</size></box></geometry>
+        </collision>
+        <visual name="vis">
+          <geometry><box><size>0.025 0.365 0.001</size></box></geometry>
+          <material><ambient>0 0 0 1</ambient><diffuse>0 0 0 1</diffuse></material>
+        </visual>
+      </link>
+    </model>
+
+    <model name="crosswalk_05">
+      <static>true</static>
+      <pose>0.5175 3.8425 0.0005 0 0 0</pose>
+      <link name="link">
+        <collision name="col">
+          <geometry><box><size>0.025 0.365 0.001</size></box></geometry>
+        </collision>
+        <visual name="vis">
+          <geometry><box><size>0.025 0.365 0.001</size></box></geometry>
+          <material><ambient>0 0 0 1</ambient><diffuse>0 0 0 1</diffuse></material>
+        </visual>
+      </link>
+    </model>
+
+    <model name="crosswalk_06">
+      <static>true</static>
+      <pose>0.6425 3.8425 0.0005 0 0 0</pose>
+      <link name="link">
+        <collision name="col">
+          <geometry><box><size>0.025 0.365 0.001</size></box></geometry>
+        </collision>
+        <visual name="vis">
+          <geometry><box><size>0.025 0.365 0.001</size></box></geometry>
+          <material><ambient>0 0 0 1</ambient><diffuse>0 0 0 1</diffuse></material>
+        </visual>
+      </link>
+    </model>
+
+    <model name="crosswalk_07">
+      <static>true</static>
+      <pose>0.7675 3.8425 0.0005 0 0 0</pose>
+      <link name="link">
+        <collision name="col">
+          <geometry><box><size>0.025 0.365 0.001</size></box></geometry>
+        </collision>
+        <visual name="vis">
+          <geometry><box><size>0.025 0.365 0.001</size></box></geometry>
+          <material><ambient>0 0 0 1</ambient><diffuse>0 0 0 1</diffuse></material>
+        </visual>
+      </link>
+    </model>
+
+    <model name="crosswalk_08">
+      <static>true</static>
+      <pose>0.8925 3.8425 0.0005 0 0 0</pose>
+      <link name="link">
+        <collision name="col">
+          <geometry><box><size>0.025 0.365 0.001</size></box></geometry>
+        </collision>
+        <visual name="vis">
+          <geometry><box><size>0.025 0.365 0.001</size></box></geometry>
+          <material><ambient>0 0 0 1</ambient><diffuse>0 0 0 1</diffuse></material>
+        </visual>
+      </link>
+    </model>
+
+    <model name="crosswalk_09">
+      <static>true</static>
+      <pose>1.0175 3.8425 0.0005 0 0 0</pose>
+      <link name="link">
+        <collision name="col">
+          <geometry><box><size>0.025 0.365 0.001</size></box></geometry>
+        </collision>
+        <visual name="vis">
+          <geometry><box><size>0.025 0.365 0.001</size></box></geometry>
+          <material><ambient>0 0 0 1</ambient><diffuse>0 0 0 1</diffuse></material>
+        </visual>
+      </link>
+    </model>
+
+    <model name="crosswalk_10">
+      <static>true</static>
+      <pose>1.1425 3.8425 0.0005 0 0 0</pose>
+      <link name="link">
+        <collision name="col">
+          <geometry><box><size>0.025 0.365 0.001</size></box></geometry>
+        </collision>
+        <visual name="vis">
+          <geometry><box><size>0.025 0.365 0.001</size></box></geometry>
+          <material><ambient>0 0 0 1</ambient><diffuse>0 0 0 1</diffuse></material>
+        </visual>
+      </link>
+    </model>
+
+    <model name="dash_01">
+      <static>true</static>
+      <pose>0.8565 0.2400 0.0005 0 0 0</pose>
+      <link name="link">
+        <collision name="col">
+          <geometry><box><size>0.0250 0.4800 0.001</size></box></geometry>
+        </collision>
+        <visual name="vis">
+          <geometry><box><size>0.0250 0.4800 0.001</size></box></geometry>
+          <material><ambient>0 0 0 1</ambient><diffuse>0 0 0 1</diffuse></material>
+        </visual>
+      </link>
+    </model>
+
+    <model name="dash_02">
+      <static>true</static>
+      <pose>0.8565 1.1300 0.0005 0 0 0</pose>
+      <link name="link">
+        <collision name="col">
+          <geometry><box><size>0.0250 0.5200 0.001</size></box></geometry>
+        </collision>
+        <visual name="vis">
+          <geometry><box><size>0.0250 0.5200 0.001</size></box></geometry>
+          <material><ambient>0 0 0 1</ambient><diffuse>0 0 0 1</diffuse></material>
+        </visual>
+      </link>
+    </model>
+
+    <model name="dash_03">
+      <static>true</static>
+      <pose>0.8565 2.0300 0.0005 0 0 0</pose>
+      <link name="link">
+        <collision name="col">
+          <geometry><box><size>0.0250 0.5000 0.001</size></box></geometry>
+        </collision>
+        <visual name="vis">
+          <geometry><box><size>0.0250 0.5000 0.001</size></box></geometry>
+          <material><ambient>0 0 0 1</ambient><diffuse>0 0 0 1</diffuse></material>
+        </visual>
+      </link>
+    </model>
+
+    <model name="dash_04">
+      <static>true</static>
+      <pose>0.8565 2.9100 0.0005 0 0 0</pose>
+      <link name="link">
+        <collision name="col">
+          <geometry><box><size>0.0250 0.4800 0.001</size></box></geometry>
+        </collision>
+        <visual name="vis">
+          <geometry><box><size>0.0250 0.4800 0.001</size></box></geometry>
+          <material><ambient>0 0 0 1</ambient><diffuse>0 0 0 1</diffuse></material>
+        </visual>
+      </link>
+    </model>
+
+    <model name="dash_05">
+      <static>true</static>
+      <pose>0.8565 4.6900 0.0005 0 0 0</pose>
+      <link name="link">
+        <collision name="col">
+          <geometry><box><size>0.0250 0.5200 0.001</size></box></geometry>
+        </collision>
+        <visual name="vis">
+          <geometry><box><size>0.0250 0.5200 0.001</size></box></geometry>
+          <material><ambient>0 0 0 1</ambient><diffuse>0 0 0 1</diffuse></material>
+        </visual>
+      </link>
+    </model>
+
+    <model name="dash_06">
+      <static>true</static>
+      <pose>0.8565 5.570 0.0005 0 0 0</pose>
+      <link name="link">
+        <collision name="col">
+          <geometry><box><size>0.0250 0.5300 0.001</size></box></geometry>
+        </collision>
+        <visual name="vis">
+          <geometry><box><size>0.0250 0.5300 0.001</size></box></geometry>
+          <material><ambient>0 0 0 1</ambient><diffuse>0 0 0 1</diffuse></material>
+        </visual>
+      </link>
+    </model>
+
+    <model name="dash_07">
+      <static>true</static>
+      <pose>0.8565 6.350 0.0005 0 0 0</pose>
+      <link name="link">
+        <collision name="col">
+          <geometry><box><size>0.0250 0.400 0.001</size></box></geometry>
+        </collision>
+        <visual name="vis">
+          <geometry><box><size>0.0250 0.4000 0.001</size></box></geometry>
+          <material><ambient>0 0 0 1</ambient><diffuse>0 0 0 1</diffuse></material>
+        </visual>
+      </link>
+    </model>
+  </world>
+</sdf>
