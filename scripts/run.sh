@@ -6,7 +6,7 @@
 
 set -e
 
-IMAGE_NAME="proj_dev:latest"
+IMAGE_NAME="kws86dockerhub/smart-road-dev:latest"
 CONTAINER_NAME="proj_dev"
 WORKSPACE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
