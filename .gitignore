@@ -8,3 +8,19 @@ log/
 .catkin_tools/
 .DS_Store
 .vscode/
+
+# Docker
+Dockerfile.old
+*.tar
+*.tar.gz
+
+# IDE
+.idea/
+*.swp
+*.swo
+
+# OS
+Thumbs.db
+
+# ROS 2 build artifacts
+*.repos
