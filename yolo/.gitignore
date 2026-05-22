@@ -1,0 +1,7 @@
+# yolo/ 내의 불필요한 폴더 및 파일 무시
+datasets/
+runs/
+__pycache__/
+*.pt
+*.jpg
+*.csv
