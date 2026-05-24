@@ -35,8 +35,8 @@
         <visual name="vis">
           <geometry><plane><normal>0 0 1</normal><size>30 30</size></plane></geometry>
           <material>
-            <ambient>0.95 0.95 0.95 1</ambient>
-            <diffuse>0.95 0.95 0.95 1</diffuse>
+            <ambient>0.2 0.2 0.2 1</ambient>
+            <diffuse>0.25 0.25 0.25 1</diffuse>
           </material>
         </visual>
       </link>
@@ -613,5 +613,50 @@
         </visual>
       </link>
     </model>
+    <!-- ===================== ROAD OBJECTS ===================== -->
+
+    <!-- 1) Speed limit sign -->
+    <include>
+      <name>speed_limit_1</name>
+      <uri>model://speed_limit_sign</uri>
+      <pose>1.40 5.0 0  0 0 3.141592</pose>
+      <static>true</static>
+    </include>
+
+    <!-- 2) Stop sign: 횡단보도 직후 우측 -->
+    <include>
+      <name>stop_sign_1</name>
+      <uri>model://stop_sign</uri>
+      <pose>1.40 3.00 0  0 0 0</pose>
+      <static>true</static>
+    </include>
+
+    <!-- 3) Pedestrian: 횡단보도 왕복 (pose는 무시됨, trajectory가 결정) -->
+    <include>
+      <name>pedestrian_1</name>
+      <uri>model://walking_actor</uri>
+    </include>
+
+    <!-- 4) Construction cones -->
+    <include>
+      <name>cone_1</name>
+      <uri>model://cone</uri>
+      <pose>0.60 2.50 0  0 0 0</pose>
+      <static>true</static>
+    </include>
+    <include>
+      <name>cone_2</name>
+      <uri>model://cone</uri>
+      <pose>1.10 1.70 0  0 0 0</pose>
+      <static>true</static>
+    </include>
+    <include>
+      <name>cone_3</name>
+      <uri>model://cone</uri>
+      <pose>0.60 0.90 0  0 0 0</pose>
+      <static>true</static>
+    </include>
+
+    <!-- 5) X1 (ambulance 자리): 답변 받은 후 추가 -->
   </world>
 </sdf>

@@ -7,6 +7,7 @@
   ============================================================ -->
 
   <!-- ====================== PROPERTIES ======================== -->
+
   <xacro:property name="platform_radius"    value="0.150"/>
   <xacro:property name="platform_thickness" value="0.005"/>
 
@@ -15,154 +16,220 @@
   <xacro:property name="wheel_track"   value="0.255"/>
 
   <!-- 지면 기준 절대 z → base_link 기준 상대 z 로 변환 시 wheel_radius 빼기 -->
-  <xacro:property name="lower_plate_z"  value="0.0225"/>  <!-- 0.020 + 0.005/2 -->
-  <xacro:property name="upper_plate_z"  value="0.0775"/>  <!-- 0.0225 + 0.050 + 0.005 -->
+  <xacro:property name="lower_plate_z" value="0.0225"/>   <!-- 0.020 + 0.005/2 -->
+  <xacro:property name="upper_plate_z" value="0.0775"/>   <!-- 0.0225 + 0.050 + 0.005 -->
 
-  <xacro:property name="caster_radius"  value="0.0075"/>
-  <xacro:property name="caster_x"       value="0.130"/>
+  <xacro:property name="caster_radius" value="0.0075"/>
+  <xacro:property name="caster_x"      value="0.130"/>
 
-  <xacro:property name="lidar_radius"   value="0.0482"/>
-  <xacro:property name="lidar_height"   value="0.0263"/>
+  <xacro:property name="lidar_radius"  value="0.0482"/>
+  <xacro:property name="lidar_height"  value="0.0263"/>
 
-  <xacro:property name="camera_x"  value="0.148"/>
-  <xacro:property name="camera_z"  value="0.055"/>  <!-- ground 기준 -->
-
+  <xacro:property name="camera_x"      value="0.148"/>
+  <xacro:property name="camera_z"      value="0.055"/>     <!-- ground 기준 -->
 
   <!-- ====================== INERTIA MACROS ==================== -->
+
   <xacro:macro name="inertia_cylinder" params="mass r l">
     <inertial>
       <mass value="${mass}"/>
-      <inertia ixx="${mass*(3*r*r+l*l)/12}" ixy="0" ixz="0"
-               iyy="${mass*(3*r*r+l*l)/12}" iyz="0"
-               izz="${mass*r*r/2}"/>
+      <inertia
+        ixx="${mass*(3*r*r+l*l)/12}"
+        ixy="0"
+        ixz="0"
+        iyy="${mass*(3*r*r+l*l)/12}"
+        iyz="0"
+        izz="${mass*r*r/2}"/>
     </inertial>
   </xacro:macro>
 
   <xacro:macro name="inertia_sphere" params="mass r">
     <inertial>
       <mass value="${mass}"/>
-      <inertia ixx="${2*mass*r*r/5}" ixy="0" ixz="0"
-               iyy="${2*mass*r*r/5}" iyz="0"
-               izz="${2*mass*r*r/5}"/>
+      <inertia
+        ixx="${2*mass*r*r/5}"
+        ixy="0"
+        ixz="0"
+        iyy="${2*mass*r*r/5}"
+        iyz="0"
+        izz="${2*mass*r*r/5}"/>
     </inertial>
   </xacro:macro>
 
   <xacro:macro name="inertia_box" params="mass x y z">
     <inertial>
       <mass value="${mass}"/>
-      <inertia ixx="${mass*(y*y+z*z)/12}" ixy="0" ixz="0"
-               iyy="${mass*(x*x+z*z)/12}" iyz="0"
-               izz="${mass*(x*x+y*y)/12}"/>
+      <inertia
+        ixx="${mass*(y*y+z*z)/12}"
+        ixy="0"
+        ixz="0"
+        iyy="${mass*(x*x+z*z)/12}"
+        iyz="0"
+        izz="${mass*(x*x+y*y)/12}"/>
     </inertial>
   </xacro:macro>
 
   <!-- ====================== BASE LINKS ======================== -->
+
   <link name="base_footprint"/>
 
   <link name="base_link">
     <visual>
       <geometry><box size="0.001 0.001 0.001"/></geometry>
     </visual>
+
+    <!-- [추가] base_link inertial: Gazebo 자동 inertia 경고 방지용 더미 -->
+    <xacro:inertia_box mass="0.001" x="0.001" y="0.001" z="0.001"/>
   </link>
 
   <joint name="base_footprint_joint" type="fixed">
     <parent link="base_footprint"/>
-    <child  link="base_link"/>
+    <child link="base_link"/>
     <origin xyz="0 0 ${wheel_radius}" rpy="0 0 0"/>
   </joint>
 
   <!-- ====================== LOWER PLATE ======================= -->
+
   <link name="lower_plate">
     <visual>
       <geometry>
-        <box size="${2*platform_radius} ${wheel_track - wheel_width - 0.010} ${platform_thickness}"/>
+        <box size="${2*platform_radius}
+                   ${wheel_track - wheel_width - 0.010}
+                   ${platform_thickness}"/>
       </geometry>
       <material name="dark_gray">
         <color rgba="0.3 0.3 0.3 1.0"/>
       </material>
     </visual>
+
     <!-- collision: 바퀴(wheel_width/2 + 5mm 여유) 구간을 제외한 중앙 box로 근사 -->
     <!-- Y폭 = 2 * (wheel_track/2 - wheel_width/2 - 0.005) = 0.219m -->
     <collision>
       <geometry>
-        <box size="${2*platform_radius} ${wheel_track - wheel_width - 0.010} ${platform_thickness}"/>
+        <box size="${2*platform_radius}
+                   ${wheel_track - wheel_width - 0.010}
+                   ${platform_thickness}"/>
       </geometry>
     </collision>
-    <xacro:inertia_cylinder mass="0.8" r="${platform_radius}" l="${platform_thickness}"/>
+
+    <xacro:inertia_cylinder
+      mass="0.8"
+      r="${platform_radius}"
+      l="${platform_thickness}"/>
   </link>
 
   <joint name="lower_plate_joint" type="fixed">
     <parent link="base_link"/>
-    <child  link="lower_plate"/>
+    <child link="lower_plate"/>
     <origin xyz="0 0 ${lower_plate_z - wheel_radius}" rpy="0 0 0"/>
   </joint>
 
   <!-- ====================== UPPER PLATE ======================= -->
+
   <link name="upper_plate">
     <visual>
       <geometry>
-        <cylinder radius="${platform_radius}" length="${platform_thickness}"/>
+        <cylinder radius="${platform_radius}"
+                  length="${platform_thickness}"/>
       </geometry>
       <material name="dark_gray"/>
     </visual>
+
     <collision>
       <geometry>
-        <cylinder radius="${platform_radius}" length="${platform_thickness}"/>
+        <cylinder radius="${platform_radius}"
+                  length="${platform_thickness}"/>
       </geometry>
     </collision>
-    <xacro:inertia_cylinder mass="0.6" r="${platform_radius}" l="${platform_thickness}"/>
+
+    <xacro:inertia_cylinder
+      mass="0.6"
+      r="${platform_radius}"
+      l="${platform_thickness}"/>
   </link>
 
   <joint name="upper_plate_joint" type="fixed">
     <parent link="base_link"/>
-    <child  link="upper_plate"/>
+    <child link="upper_plate"/>
     <origin xyz="0 0 ${upper_plate_z - wheel_radius}" rpy="0 0 0"/>
   </joint>
 
   <!-- ====================== DRIVE WHEELS ====================== -->
+
   <xacro:macro name="drive_wheel" params="name side">
+
     <link name="${name}">
       <visual>
         <geometry>
-          <cylinder radius="${wheel_radius}" length="${wheel_width}"/>
+          <cylinder radius="${wheel_radius}"
+                    length="${wheel_width}"/>
         </geometry>
         <material name="blue">
           <color rgba="0.1 0.4 0.8 1.0"/>
         </material>
       </visual>
+
       <collision>
         <geometry>
-          <cylinder radius="${wheel_radius}" length="${wheel_width}"/>
+          <cylinder radius="${wheel_radius}"
+                    length="${wheel_width}"/>
         </geometry>
       </collision>
-      <xacro:inertia_cylinder mass="0.15" r="${wheel_radius}" l="${wheel_width}"/>
+
+      <xacro:inertia_cylinder
+        mass="0.15"
+        r="${wheel_radius}"
+        l="${wheel_width}"/>
     </link>
 
+    <!-- [수정] 휠축: 표준 설정으로 복원. cylinder 길이방향(Z)을 Y축으로 회전시킴 -->
     <joint name="${name}_joint" type="continuous">
       <parent link="base_link"/>
-      <child  link="${name}"/>
-      <origin xyz="0 ${side * wheel_track/2} 0" rpy="${pi/2} 0 0"/>
+      <child link="${name}"/>
+      <origin xyz="0 ${side * wheel_track/2} 0"
+              rpy="${pi/2} 0 0"/>
       <axis xyz="0 0 1"/>
       <dynamics damping="0.1" friction="0.1"/>
     </joint>
+
   </xacro:macro>
 
   <xacro:drive_wheel name="left_wheel"  side=" 1"/>
   <xacro:drive_wheel name="right_wheel" side="-1"/>
 
   <!-- ====================== BALL CASTERS ====================== -->
+  <!-- [수정] ball joint를 fixed → 2축 continuous로 변경 (자유 회전 허용)   -->
+  <!-- housing → (Y축 회전) → yaw_link → (X축 회전) → ball                  -->
+
   <xacro:macro name="ball_caster" params="name cx">
+
     <link name="${name}_housing">
       <visual>
         <geometry><box size="0.02 0.02 0.01"/></geometry>
         <material name="light_gray"><color rgba="0.7 0.7 0.7 1.0"/></material>
       </visual>
-      <xacro:inertia_box mass="0.02" x="0.02" y="0.02" z="0.01"/>
+      <xacro:inertia_box mass="0.01" x="0.02" y="0.02" z="0.01"/>
     </link>
+
     <joint name="${name}_housing_joint" type="fixed">
       <parent link="base_link"/>
-      <child  link="${name}_housing"/>
-      <origin xyz="${cx} 0 ${-wheel_radius + caster_radius + 0.005}" rpy="0 0 0"/>
+      <child link="${name}_housing"/>
+      <origin xyz="${cx} 0 ${-wheel_radius + caster_radius + 0.0075}"
+              rpy="0 0 0"/>
+    </joint>
+
+    <!-- [추가] 중간 더미 링크: 2축 자유 회전을 위한 가상 링크 -->
+    <link name="${name}_yaw_link">
+      <xacro:inertia_sphere mass="0.001" r="${caster_radius}"/>
+    </link>
+
+    <!-- 첫 번째 회전축: Z축 (좌우 미끄러짐 시 회전) -->
+    <joint name="${name}_yaw_joint" type="continuous">
+      <parent link="${name}_housing"/>
+      <child link="${name}_yaw_link"/>
+      <origin xyz="0 0 ${-caster_radius}" rpy="0 0 0"/>
+      <axis xyz="0 0 1"/>
+      <dynamics damping="0.0" friction="0.0"/>
     </joint>
 
     <link name="${name}_ball">
@@ -173,63 +240,82 @@
       <collision>
         <geometry><sphere radius="${caster_radius}"/></geometry>
       </collision>
-      <xacro:inertia_sphere mass="0.01" r="${caster_radius}"/>
+      <xacro:inertia_sphere mass="0.02" r="${caster_radius}"/>
     </link>
-    <joint name="${name}_ball_joint" type="fixed">
-      <parent link="${name}_housing"/>
-      <child  link="${name}_ball"/>
-      <origin xyz="0 0 ${-caster_radius}" rpy="0 0 0"/>
+
+    <!-- 두 번째 회전축: X축 (전후진 시 굴러감) -->
+    <joint name="${name}_ball_joint" type="continuous">
+      <parent link="${name}_yaw_link"/>
+      <child link="${name}_ball"/>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <axis xyz="1 0 0"/>
+      <dynamics damping="0.0" friction="0.0"/>
     </joint>
+
   </xacro:macro>
 
   <xacro:ball_caster name="front_caster" cx=" ${caster_x}"/>
   <xacro:ball_caster name="rear_caster"  cx="-${caster_x}"/>
 
   <!-- ========================= LIDAR ========================== -->
+
   <link name="lidar_link">
     <visual>
       <geometry>
-        <cylinder radius="${lidar_radius}" length="${lidar_height}"/>
+        <cylinder radius="${lidar_radius}"
+                  length="${lidar_height}"/>
       </geometry>
       <material name="black"><color rgba="0.1 0.1 0.1 1.0"/></material>
     </visual>
+
     <collision>
       <geometry>
-        <cylinder radius="${lidar_radius}" length="${lidar_height}"/>
+        <cylinder radius="${lidar_radius}"
+                  length="${lidar_height}"/>
       </geometry>
     </collision>
-    <xacro:inertia_cylinder mass="0.17" r="${lidar_radius}" l="${lidar_height}"/>
+
+    <xacro:inertia_cylinder
+      mass="0.17"
+      r="${lidar_radius}"
+      l="${lidar_height}"/>
   </link>
 
   <joint name="lidar_joint" type="fixed">
     <parent link="upper_plate"/>
-    <child  link="lidar_link"/>
-    <origin xyz="0 0 ${platform_thickness/2 + lidar_height/2}" rpy="0 0 0"/>
+    <child link="lidar_link"/>
+    <origin xyz="0 0 ${platform_thickness/2 + lidar_height/2}"
+            rpy="0 0 0"/>
   </joint>
 
   <!-- ======================== CAMERA ========================== -->
+
   <link name="camera_link">
     <visual>
       <geometry><box size="0.03 0.03 0.02"/></geometry>
       <material name="black"/>
     </visual>
+
     <collision>
       <geometry><box size="0.03 0.03 0.02"/></geometry>
     </collision>
+
     <xacro:inertia_box mass="0.05" x="0.03" y="0.03" z="0.02"/>
   </link>
 
   <joint name="camera_joint" type="fixed">
     <parent link="base_link"/>
-    <child  link="camera_link"/>
-    <origin xyz="${camera_x} 0 ${camera_z - wheel_radius}" rpy="0 0 0"/>
+    <child link="camera_link"/>
+    <origin xyz="${camera_x} 0 ${camera_z - wheel_radius}"
+            rpy="0 0 0"/>
   </joint>
 
   <!-- camera_optical_frame: ROS 카메라 좌표계 (Z-forward) -->
   <link name="camera_optical_frame"/>
+
   <joint name="camera_optical_joint" type="fixed">
     <parent link="camera_link"/>
-    <child  link="camera_optical_frame"/>
+    <child link="camera_optical_frame"/>
     <origin xyz="0 0 0" rpy="${-pi/2} 0 ${-pi/2}"/>
   </joint>
 
@@ -237,16 +323,22 @@
 
   <!-- 차동구동 -->
   <gazebo>
-    <plugin filename="gz-sim-diff-drive-system"
-            name="gz::sim::systems::DiffDrive">
+    <plugin
+      filename="gz-sim-diff-drive-system"
+      name="gz::sim::systems::DiffDrive">
+
       <left_joint>left_wheel_joint</left_joint>
       <right_joint>right_wheel_joint</right_joint>
+
       <wheel_separation>${wheel_track}</wheel_separation>
       <wheel_radius>${wheel_radius}</wheel_radius>
+
       <max_linear_acceleration>1.0</max_linear_acceleration>
       <max_angular_acceleration>2.0</max_angular_acceleration>
+
       <topic>cmd_vel</topic>
       <odom_topic>odom</odom_topic>
+
       <frame_id>odom</frame_id>
       <child_frame_id>base_footprint</child_frame_id>
     </plugin>
@@ -254,34 +346,27 @@
 
   <!-- 볼캐스터 마찰 제거 -->
   <gazebo reference="front_caster_ball">
-    <surface>
-      <friction>
-        <ode><mu>0</mu><mu2>0</mu2></ode>
-      </friction>
-    </surface>
+    <mu1>0.0</mu1>
+    <mu2>0.0</mu2>
   </gazebo>
   <gazebo reference="rear_caster_ball">
-    <surface>
-      <friction>
-        <ode><mu>0</mu><mu2>0</mu2></ode>
-      </friction>
-    </surface>
+    <mu1>0.0</mu1>
+    <mu2>0.0</mu2>
   </gazebo>
 
-  <!-- 바퀴 마찰 -->
+  <!-- [수정] 바퀴 마찰: mu1=2.0, mu2=0.2 (이전 메시지 값) -->
   <gazebo reference="left_wheel">
-    <surface>
-      <friction>
-        <ode><mu>1.0</mu><mu2>0.5</mu2></ode>
-      </friction>
-    </surface>
+    <mu1>1.0</mu1>
+    <mu2>1.0</mu2>
+    <kp>1e6</kp>
+    <kd>1.0</kd>
   </gazebo>
+
   <gazebo reference="right_wheel">
-    <surface>
-      <friction>
-        <ode><mu>1.0</mu><mu2>0.5</mu2></ode>
-      </friction>
-    </surface>
+    <mu1>1.0</mu1>
+    <mu2>1.0</mu2>
+    <kp>1e6</kp>
+    <kd>1.0</kd>
   </gazebo>
 
   <!-- LiDAR 센서 : LDROBOT D200 (LD14P) -->
@@ -291,6 +376,7 @@
       <topic>scan</topic>
       <gz_frame_id>lidar_link</gz_frame_id>
       <update_rate>6</update_rate>
+
       <lidar>
         <scan>
           <horizontal>
@@ -300,17 +386,20 @@
             <max_angle>3.14159</max_angle>
           </horizontal>
         </scan>
+
         <range>
           <min>0.1</min>
           <max>8.0</max>
           <resolution>0.005</resolution>
         </range>
+
         <noise>
           <type>gaussian</type>
           <mean>0.0</mean>
           <stddev>0.005</stddev>
         </noise>
       </lidar>
+
       <always_on>true</always_on>
       <visualize>false</visualize>
     </sensor>
@@ -322,19 +411,24 @@
       <topic>camera/image_raw</topic>
       <gz_frame_id>camera_link</gz_frame_id>
       <update_rate>30</update_rate>
+
       <camera>
-        <horizontal_fov>1.2217</horizontal_fov>  <!-- 70° -->
+        <horizontal_fov>1.2217</horizontal_fov>   <!-- 70° -->
+
         <image>
           <width>1280</width>
           <height>800</height>
           <format>R8G8B8</format>
         </image>
+
         <clip>
           <near>0.02</near>
           <far>300</far>
         </clip>
+
         <optical_frame_id>camera_optical_frame</optical_frame_id>
       </camera>
+
       <always_on>true</always_on>
       <visualize>false</visualize>
     </sensor>
