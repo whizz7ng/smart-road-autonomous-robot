@@ -1,0 +1,14 @@
+path: /home/user/proj/yolo2/datasets
+train: train/images
+val: val/images
+
+nc: 8
+names:
+  0: greenlight
+  1: light_off
+  2: redlight
+  3: traffic_left_light_green
+  4: traffic_light_red
+  5: yellowlight
+  6: limit_sign
+  7: stop_sign
