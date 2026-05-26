@@ -32,6 +32,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     python3-rosdep \
     python3-vcstool \
     python3-pandas \
+    python3-empy \
+    python3-lark \
     ros-jazzy-cv-bridge \
     ros-jazzy-image-transport \
     ros-jazzy-rosbridge-suite \
@@ -51,11 +53,11 @@ RUN pip3 install --no-cache-dir --break-system-packages \
 # --- 3b) AI / 비전 / HW 통신 패키지 (가상환경으로 격리) ---
 # 시스템 파이썬을 건드리지 않고, /opt/venv에 가상환경을 구축합니다.
 RUN python3 -m venv /opt/venv
-ENV PATH="/opt/venv/bin:$PATH"
+#ENV PATH="/opt/venv/bin:$PATH"
 
-# pip 자체를 업그레이드하고 라이브러리 설치
-RUN pip install --no-cache-dir --upgrade pip && \
-    pip install --no-cache-dir \
+# pip 자체를 업그레이드하고 라이브러리 설치 (가상환경 내부 pip 사용)
+RUN /opt/venv/bin/pip install --no-cache-dir --upgrade pip && \
+    /opt/venv/bin/pip install --no-cache-dir \
     "ultralytics==8.2.103" \
     opencv-python-headless \
     pyserial \
