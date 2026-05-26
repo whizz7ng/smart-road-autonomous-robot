@@ -5,6 +5,7 @@ from launch import LaunchDescription
 from launch.actions import IncludeLaunchDescription, TimerAction
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch_ros.actions import Node
+import math
 
 
 def generate_launch_description():
@@ -12,6 +13,12 @@ def generate_launch_description():
     xacro_file = os.path.join(pkg_dir, 'urdf', 'agv_robot_urdf.xacro')
     world_file = os.path.join(pkg_dir, 'worlds', 'agv_track.sdf')
 
+    pkg_share = get_package_share_directory('agv_robot')
+    models_path = os.path.join(pkg_share, 'models')
+    if 'GZ_SIM_RESOURCE_PATH' in os.environ:
+        os.environ['GZ_SIM_RESOURCE_PATH'] += os.pathsep + models_path
+    else:
+        os.environ['GZ_SIM_RESOURCE_PATH'] = models_path
     # xacro → URDF 변환
     robot_description = subprocess.check_output(
         ['xacro', xacro_file]
@@ -50,9 +57,13 @@ def generate_launch_description():
                 arguments=[
                     '-topic', 'robot_description',
                     '-name',  'agv_robot',
-                    '-x', '0.0',
-                    '-y', '0.0',
-                    '-z', '0.05',
+                    '-x', '0.65',
+                    '-y', '-0.2',
+                    '-z', '0.01',
+                    '-R', '0',
+                    '-P', '0',
+                    '-Y', str((math.pi)/2),
+
                 ],
                 output='screen'
             )

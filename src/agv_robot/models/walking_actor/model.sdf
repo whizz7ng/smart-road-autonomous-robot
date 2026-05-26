@@ -1,0 +1,56 @@
+<?xml version="1.0" ?>
+<sdf version="1.6">
+  <actor name="pedestrian_crosswalk">
+    <skin>
+      <filename>model://walking_actor/meshes/walk.dae</filename>
+      <scale>1</scale>
+    </skin>
+    <animation name="walking">
+      <filename>model://walking_actor/meshes/walk.dae</filename>
+      <scale>1</scale>
+      <interpolate_x>true</interpolate_x>
+    </animation>
+    <script>
+      <loop>true</loop>
+      <delay_start>0.0</delay_start>
+      <auto_start>true</auto_start>
+
+      <!-- 횡단보도(X: 0.0 ~ 1.2, Y=3.84)를 좌우로 왕복.
+           yaw=0 → +X 방향 향함, yaw=pi → -X 방향 향함.
+           한 방향 4초씩 + 회전 1초 = 10초 주기. -->
+      <trajectory id="0" type="walking">
+
+        <!-- 시작: 우측 끝, 좌측을 바라봄 -->
+        <waypoint>
+          <time>0.0</time>
+          <pose>1.2 3.84 0.13  0 0 3.14159</pose>
+        </waypoint>
+
+        <!-- 4초 후 좌측 끝 도착 -->
+        <waypoint>
+          <time>4.0</time>
+          <pose>0.0 3.84 0.13  0 0 3.14159</pose>
+        </waypoint>
+
+        <!-- 1초간 그 자리에서 회전 (좌 → 우 바라봄) -->
+        <waypoint>
+          <time>5.0</time>
+          <pose>0.0 3.84 0.13  0 0 0.0</pose>
+        </waypoint>
+
+        <!-- 4초 후 우측 끝 복귀 -->
+        <waypoint>
+          <time>9.0</time>
+          <pose>1.2 3.84 0.13  0 0 0.0</pose>
+        </waypoint>
+
+        <!-- 1초간 회전 (우 → 좌 바라봄) → loop 시작점과 연결 -->
+        <waypoint>
+          <time>10.0</time>
+          <pose>1.2 3.84 0.13  0 0 3.14159</pose>
+        </waypoint>
+
+      </trajectory>
+    </script>
+  </actor>
+</sdf>
