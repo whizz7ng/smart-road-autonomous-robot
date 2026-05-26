@@ -1,4 +1,5 @@
 # YOLO 탐지 결과 1개 객체
+int32 class_id           # 클래스 번호 (YOLO 학습 시 정의된 ID)
 string class_name        # "red_light", "green_light", "stop_sign" 등
 float32 confidence       # 0.0 ~ 1.0
 int32 x_min              # 바운딩 박스 좌상단 x
