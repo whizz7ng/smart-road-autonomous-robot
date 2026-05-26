@@ -17,6 +17,7 @@ rosidl_generate_interfaces(${PROJECT_NAME}
   "msg/DrivingCmd.msg"
   "msg/SerialPacket.msg"
   "msg/RobotStatus.msg"
+  "msg/SystemHealth.msg"
   DEPENDENCIES std_msgs
 )
 
