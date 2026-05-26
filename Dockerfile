@@ -27,6 +27,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # --- 2) Python & ROS 2 관련 추가 패키지 ---
 RUN apt-get update && apt-get install -y --no-install-recommends \
     python3-pip \
+    python3-venv \
     python3-colcon-common-extensions \
     python3-rosdep \
     python3-vcstool \
@@ -47,13 +48,19 @@ RUN pip3 install --no-cache-dir --break-system-packages \
     torchvision \
     torchaudio
 
-# --- 3b) AI / 비전 / HW 통신 패키지 ---
-# numpy/matplotlib/scipy/pyyaml/pandas는 apt에 이미 있으므로 제외 (충돌 방지)
-RUN pip3 install --no-cache-dir --break-system-packages \
+# --- 3b) AI / 비전 / HW 통신 패키지 (가상환경으로 격리) ---
+# 시스템 파이썬을 건드리지 않고, /opt/venv에 가상환경을 구축합니다.
+RUN python3 -m venv /opt/venv
+ENV PATH="/opt/venv/bin:$PATH"
+
+# pip 자체를 업그레이드하고 라이브러리 설치
+RUN pip install --no-cache-dir --upgrade pip && \
+    pip install --no-cache-dir \
     "ultralytics==8.2.103" \
-    opencv-python \
+    opencv-python-headless \
     pyserial \
     ncnn
+
 
 # --- 4) ROS 2 환경 자동 source (ubuntu 유저용) ---
 RUN echo "source /opt/ros/jazzy/setup.bash" >> /home/ubuntu/.bashrc \
