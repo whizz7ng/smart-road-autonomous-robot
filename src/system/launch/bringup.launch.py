@@ -12,13 +12,19 @@ bringup.launch.py - 전체 시스템 통합 런처
 """
 
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument, LogInfo, GroupAction
+from launch.actions import DeclareLaunchArgument, LogInfo, GroupAction, SetEnvironmentVariable
 from launch.conditions import IfCondition
 from launch.substitutions import LaunchConfiguration, EqualsSubstitution
 from launch_ros.actions import Node
+import os
 
 
 def generate_launch_description():
+
+    # ===== 가상환경 경로 추가 (빌드 에러 방지) =====
+    venv_site_packages = "/opt/venv/lib/python3.12/site-packages"
+    current_pythonpath = os.environ.get('PYTHONPATH', '')
+    new_pythonpath = f"{current_pythonpath}:{venv_site_packages}" if current_pythonpath else venv_site_packages
 
     # ===== Launch 인자 =====
     mode_arg = DeclareLaunchArgument(
@@ -79,6 +85,7 @@ def generate_launch_description():
     )
 
     return LaunchDescription([
+        SetEnvironmentVariable('PYTHONPATH', new_pythonpath),
         mode_arg,
         LogInfo(msg=['[bringup] 시작 모드: ', mode]),
         perception_node,
