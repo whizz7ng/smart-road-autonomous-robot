@@ -21,6 +21,7 @@ setup(
     entry_points={
         'console_scripts': [
             'fsm_node = simple_fsm.fsm_node:main',
+            'camera_node = simple_fsm.camera_node:main',
         ],
     },
 )
