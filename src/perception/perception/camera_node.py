@@ -17,7 +17,7 @@ class CameraNode(Node):
         super().__init__('camera_node')
 
         # --- 파라미터 선언 (launch 파일이나 CLI에서 변경 가능) ---
-        self.declare_parameter('device_id', 0)
+        self.declare_parameter('device_id', 1)
         self.declare_parameter('frame_width', 640)
         self.declare_parameter('frame_height', 480)
         self.declare_parameter('fps', 30.0)
