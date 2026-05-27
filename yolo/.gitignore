@@ -1,14 +1,7 @@
-# --- 기존 무시 목록 ---
+# yolo/ 내의 불필요한 폴더 및 파일 무시
 datasets/
 runs/
 __pycache__/
 *.pt
 *.jpg
 *.csv
-
-# --- 특정 파일만 예외적으로 허용 (화이트리스트) ---
-!data.yaml
-!predict.py
-!train.py
-!데이타 증강전.png
-!데이타 증강후.png
