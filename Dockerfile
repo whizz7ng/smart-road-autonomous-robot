@@ -27,10 +27,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # --- 2) Python & ROS 2 관련 추가 패키지 ---
 RUN apt-get update && apt-get install -y --no-install-recommends \
     python3-pip \
+    python3-venv \
     python3-colcon-common-extensions \
     python3-rosdep \
     python3-vcstool \
     python3-pandas \
+    python3-empy \
+    python3-lark \
     ros-jazzy-cv-bridge \
     ros-jazzy-image-transport \
     ros-jazzy-rosbridge-suite \
@@ -47,21 +50,37 @@ RUN pip3 install --no-cache-dir --break-system-packages \
     torchvision \
     torchaudio
 
-# --- 3b) AI / 비전 / HW 통신 패키지 ---
-# numpy/matplotlib/scipy/pyyaml/pandas는 apt에 이미 있으므로 제외 (충돌 방지)
-RUN pip3 install --no-cache-dir --break-system-packages \
+# --- 3b) AI / 비전 / HW 통신 패키지 (가상환경으로 격리) ---
+# 시스템 파이썬을 건드리지 않고, /opt/venv에 가상환경을 구축합니다.
+RUN python3 -m venv /opt/venv
+#ENV PATH="/opt/venv/bin:$PATH"
+
+# pip 자체를 업그레이드하고 라이브러리 설치 (가상환경 내부 pip 사용)
+RUN /opt/venv/bin/pip install --no-cache-dir --upgrade pip && \
+    /opt/venv/bin/pip install --no-cache-dir \
     "ultralytics==8.2.103" \
-    opencv-python \
+    opencv-python-headless \
     pyserial \
     ncnn
 
-# --- 4) ROS 2 환경 자동 source ---
-RUN echo "source /opt/ros/jazzy/setup.bash" >> /root/.bashrc \
-    && echo "[ -f /ros2_ws/install/setup.bash ] && source /ros2_ws/install/setup.bash" >> /root/.bashrc \
-    && echo "export ROS_DOMAIN_ID=42" >> /root/.bashrc
+
+# --- 4) ROS 2 환경 자동 source (ubuntu 유저용) ---
+RUN echo "source /opt/ros/jazzy/setup.bash" >> /home/ubuntu/.bashrc \
+    && echo "[ -f /ros2_ws/install/setup.bash ] && source /ros2_ws/install/setup.bash" >> /home/ubuntu/.bashrc \
+    && echo "export ROS_DOMAIN_ID=42" >> /home/ubuntu/.bashrc \
+    && chown ubuntu:ubuntu /home/ubuntu/.bashrc
 
 # --- 5) 작업 디렉토리 ---
 WORKDIR /ros2_ws
+
+# --- 5-1) ubuntu 유저에게 sudo 권한 + /ros2_ws 소유권 부여 ---
+RUN echo "ubuntu ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/ubuntu \
+    && chmod 0440 /etc/sudoers.d/ubuntu \
+    && mkdir -p /ros2_ws \
+    && chown -R ubuntu:ubuntu /ros2_ws
+
+# --- 5-2) ubuntu 유저로 전환 ---
+USER ubuntu
 
 # --- 6) 기본 진입점 ---
 CMD ["/bin/bash"]
