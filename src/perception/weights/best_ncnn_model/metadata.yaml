@@ -1,0 +1,21 @@
+description: Ultralytics best model trained on data.yaml
+author: Ultralytics
+date: '2026-05-26T14:58:19.996941'
+version: 8.2.103
+license: AGPL-3.0 License (https://ultralytics.com/license)
+docs: https://docs.ultralytics.com
+stride: 32
+task: detect
+batch: 1
+imgsz:
+- 640
+- 640
+names:
+  0: greenlight
+  1: light_off
+  2: redlight
+  3: traffic_left_light_green
+  4: traffic_light_red
+  5: yellowlight
+  6: limit_sign
+  7: stop_sign
