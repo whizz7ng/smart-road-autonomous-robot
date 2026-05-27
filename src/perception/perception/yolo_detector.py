@@ -252,15 +252,22 @@ class RobotPerceptionNode(Node):
             self.percep_pub.publish(msg)
 
             # 디버깅 화면 표시 관리
+            # [수정 제안] 디버깅 창이 안 뜨는 환경을 위한 예외 처리
             if not self.cv_initialized:
-                cv2.namedWindow("Robot Perception View", cv2.WINDOW_NORMAL)
-                cv2.namedWindow("Lane Mask View", cv2.WINDOW_NORMAL)
-                cv2.namedWindow("Crosswalk Mask View", cv2.WINDOW_NORMAL)
-                self.cv_initialized = True
+                try:
+                    cv2.namedWindow("Robot Perception View", cv2.WINDOW_NORMAL)
+                    cv2.namedWindow("Lane Mask View", cv2.WINDOW_NORMAL)
+                    cv2.namedWindow("Crosswalk Mask View", cv2.WINDOW_NORMAL)
+                    self.cv_initialized = True
+                except cv2.error:
+                    self.get_logger().warn('디스플레이를 찾을 수 없습니다. 창 표시를 건너뜁니다.')
+                    self.cv_initialized = "disabled" # 플래그를 비활성화로 설정
 
-            cv2.imshow("Robot Perception View", annotated_frame)
-            cv2.imshow("Lane Mask View", lane_mask)
-            cv2.imshow("Crosswalk Mask View", crosswalk_mask)
+            # 창 출력 부분
+            if self.cv_initialized is True:
+                cv2.imshow("Robot Perception View", annotated_frame)
+                cv2.imshow("Lane Mask View", lane_mask)
+                cv2.imshow("Crosswalk Mask View", crosswalk_mask)
             
             if cv2.waitKey(1) & 0xFF == ord('q'):
                 self.get_logger().info('사용자에 의해 종료됩니다.')
