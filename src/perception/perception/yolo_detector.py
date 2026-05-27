@@ -7,6 +7,7 @@ sys.path.append('/opt/ros/jazzy/lib/python3.12/site-packages')
 
 import rclpy
 from rclpy.node import Node
+from rclpy.qos import qos_profile_sensor_data
 from sensor_msgs.msg import Image
 from std_msgs.msg import String  # Eng B에게 JSON을 보내기 위한 메시지 타입
 from cv_bridge import CvBridge
@@ -49,7 +50,11 @@ class RobotPerceptionNode(Node):
             
             # 3. 카메라 토픽 구독
             self.subscription = self.create_subscription(
-                Image, '/camera/image_raw', self.image_callback, 10)
+                Image,
+                '/camera/image_raw',
+                self.image_callback,
+                qos_profile_sensor_data
+            )
             
             # 4. 이미지 더블 버퍼링 변수 및 0.1초(10Hz) 주기 연산 타이머 설정
             self.latest_frame = None
