@@ -44,3 +44,5 @@ esp32_firmware/.vscode/ipch
 *.bin
 *.elf
 *.map
+
+!src/perception/weights/best_ncnn_model/model.ncnn.bin
