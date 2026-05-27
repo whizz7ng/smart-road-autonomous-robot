@@ -1,9 +1,8 @@
 import os
 import subprocess
-from ament_index_python.packages import get_package_share_directory
+from ament_index_python.packages import get_package_share_directory, get_package_prefix
 from launch import LaunchDescription
-from launch.actions import IncludeLaunchDescription, TimerAction
-from launch.launch_description_sources import PythonLaunchDescriptionSource
+from launch.actions import ExecuteProcess, TimerAction
 from launch_ros.actions import Node
 import math
 
@@ -15,10 +14,17 @@ def generate_launch_description():
 
     pkg_share = get_package_share_directory('agv_robot')
     models_path = os.path.join(pkg_share, 'models')
-    if 'GZ_SIM_RESOURCE_PATH' in os.environ:
-        os.environ['GZ_SIM_RESOURCE_PATH'] += os.pathsep + models_path
-    else:
-        os.environ['GZ_SIM_RESOURCE_PATH'] = models_path
+    plugin_path = os.path.join(get_package_prefix('traffic_light_plugin'), 'lib')
+
+    # 환경변수 dict (자식 프로세스에 명시적으로 전달)
+    gz_env = {
+        **os.environ,  # 기존 환경 유지
+        'GZ_SIM_RESOURCE_PATH': models_path
+            + os.pathsep + os.environ.get('GZ_SIM_RESOURCE_PATH', ''),
+        'GZ_SIM_SYSTEM_PLUGIN_PATH': plugin_path
+            + os.pathsep + os.environ.get('GZ_SIM_SYSTEM_PLUGIN_PATH', ''),
+    }
+
     # xacro → URDF 변환
     robot_description = subprocess.check_output(
         ['xacro', xacro_file]
@@ -36,18 +42,14 @@ def generate_launch_description():
         }]
     )
 
-    # Gazebo Harmonic - 절대경로로 world 지정
-    gazebo = IncludeLaunchDescription(
-        PythonLaunchDescriptionSource([
-            os.path.join(
-                get_package_share_directory('ros_gz_sim'),
-                'launch', 'gz_sim.launch.py'
-            )
-        ]),
-        launch_arguments={'gz_args': f'-r {world_file}'}.items(),
+    # ★ gz sim 직접 실행 (환경변수 명시 전달)
+    gazebo = ExecuteProcess(
+        cmd=['gz', 'sim', '-r', '-v', '4', world_file],
+        output='screen',
+        additional_env=gz_env,
     )
 
-    # 로봇 스폰 (Gazebo 뜨고 나서)
+    # 로봇 스폰
     spawn_entity = TimerAction(
         period=5.0,
         actions=[
@@ -56,14 +58,13 @@ def generate_launch_description():
                 executable='create',
                 arguments=[
                     '-topic', 'robot_description',
-                    '-name',  'agv_robot',
+                    '-name', 'agv_robot',
                     '-x', '0.65',
                     '-y', '-0.2',
                     '-z', '0.01',
                     '-R', '0',
                     '-P', '0',
                     '-Y', str((math.pi)/2),
-
                 ],
                 output='screen'
             )
