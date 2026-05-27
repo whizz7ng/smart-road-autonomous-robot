@@ -1,0 +1,52 @@
+# ============================================================
+# smart-road-pi4:latest - 라즈베리파이4 실물 배포용 (arm64)
+# Base: ros:jazzy-ros-base (Ubuntu 24.04, headless)
+# GUI 없음, torch 없음, ncnn + pyserial + opencv만
+# ============================================================
+FROM ros:jazzy-ros-base
+
+ENV DEBIAN_FRONTEND=noninteractive
+ENV TZ=Asia/Seoul
+ENV ROS_DOMAIN_ID=42
+ENV RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential cmake git wget curl vim nano tmux \
+    net-tools iputils-ping sudo \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    python3-pip \
+    python3-colcon-common-extensions \
+    python3-rosdep \
+    python3-empy \
+    python3-lark \
+    ros-jazzy-cv-bridge \
+    ros-jazzy-image-transport \
+    ros-jazzy-rmw-cyclonedds-cpp \
+    ros-jazzy-teleop-twist-keyboard \
+    v4l-utils \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN pip3 install --no-cache-dir --break-system-packages --ignore-installed \
+    "numpy<2" \
+    opencv-python-headless \
+    pyserial \
+    ncnn \
+    "ultralytics==8.2.103"
+
+RUN echo "ubuntu ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/ubuntu \
+    && chmod 0440 /etc/sudoers.d/ubuntu \
+    && usermod -aG dialout ubuntu \
+    && mkdir -p /ros2_ws \
+    && chown -R ubuntu:ubuntu /ros2_ws
+
+RUN echo "source /opt/ros/jazzy/setup.bash" >> /home/ubuntu/.bashrc \
+    && echo "[ -f /ros2_ws/install/setup.bash ] && source /ros2_ws/install/setup.bash" >> /home/ubuntu/.bashrc \
+    && echo "export ROS_DOMAIN_ID=42" >> /home/ubuntu/.bashrc \
+    && echo "export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp" >> /home/ubuntu/.bashrc \
+    && chown ubuntu:ubuntu /home/ubuntu/.bashrc
+
+WORKDIR /ros2_ws
+USER ubuntu
+CMD ["/bin/bash"]
