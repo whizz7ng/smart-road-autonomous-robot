@@ -3,7 +3,7 @@ CONTAINER_NAME="smart-road-pi4"
 IMAGE_NAME="smart-road-pi4:latest"
 WORKSPACE="$(cd "$(dirname "$0")/.." && pwd)"
 
-SERIAL_PORT="/dev/ttyUSB0"
+SERIAL_PORT="/dev/ttyAMA0"
 SERIAL_ARGS=""
 if [ -e "$SERIAL_PORT" ]; then
     SERIAL_ARGS="--device=$SERIAL_PORT"
