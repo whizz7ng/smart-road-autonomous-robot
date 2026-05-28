@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<title>카메라 테스트</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { background: #0a0f14; color: #cdd; font-family: monospace; padding: 20px; }
+h1 { font-size: 14px; letter-spacing: 2px; color: #7ecfff; margin-bottom: 16px; }
+.config { display: flex; gap: 8px; margin-bottom: 12px; }
+.config input {
+    flex: 1; background: #0e1a24; border: 1px solid #1e3a4a;
+    color: #cdd; padding: 8px 12px; font-family: monospace; font-size: 13px;
+    border-radius: 4px;
+}
+.config button {
+    background: #1e3a4a; border: 1px solid #2a5a6a; color: #7ecfff;
+    padding: 8px 20px; font-family: monospace; font-size: 13px;
+    border-radius: 4px; cursor: pointer;
+}
+.config button:hover { background: #2a5a6a; }
+.status { display: flex; gap: 16px; margin-bottom: 12px; font-size: 12px; }
+.s-item { display: flex; align-items: center; gap: 6px; }
+.dot { width: 8px; height: 8px; border-radius: 50%; background: #444; }
+.dot.green  { background: #5cb85c; }
+.dot.red    { background: #d9534f; }
+.dot.yellow { background: #f0ad4e; animation: blink 1s infinite; }
+@keyframes blink { 50% { opacity: 0.3; } }
+.video-wrap {
+    width: 100%; max-width: 800px; aspect-ratio: 4/3;
+    background: #07111a; border: 1px solid #1e3a4a; border-radius: 6px;
+    display: flex; align-items: center; justify-content: center;
+    position: relative; overflow: hidden;
+}
+#camImg { width: 100%; height: 100%; object-fit: contain; display: none; }
+.ph { text-align: center; color: #2a4a5a; font-size: 12px; line-height: 2.2; }
+.log {
+    margin-top: 12px; max-width: 800px;
+    background: #07111a; border: 1px solid #1e3a4a; border-radius: 6px;
+    padding: 8px 12px; font-size: 11px; height: 120px; overflow-y: auto;
+}
+.log .ok  { color: #5cb85c; }
+.log .err { color: #d9534f; }
+.log .inf { color: #5a7a8a; }
+</style>
+</head>
+<body>
+
+<h1>ROS CAMERA TEST</h1>
+
+<div class="config">
+    <input id="ipInput" type="text" value="192.168.0.34" placeholder="라즈베리파이 IP" />
+    <button onclick="connect()">연결</button>
+    <button onclick="disconnect()">끊기</button>
+</div>
+
+<div class="status">
+    <div class="s-item"><div class="dot" id="wsDot"></div><span id="wsText">대기</span></div>
+    <div class="s-item"><div class="dot" id="camDot"></div><span id="camText">카메라 대기</span></div>
+    <div class="s-item"><span id="fpsText"></span></div>
+</div>
+
+<div class="video-wrap">
+    <img id="camImg" alt="camera" />
+    <div class="ph" id="ph">
+        <div>연결 버튼을 누르세요</div>
+        <div>ws://192.168.0.34:9090</div>
+        <div>/camera/image_raw/compressed</div>
+    </div>
+</div>
+
+<div class="log" id="log"></div>
+
+<script src="https://cdn.jsdelivr.net/npm/roslib@1.4.1/build/roslib.min.js"></script>
+<script>
+let ros = null, topic = null;
+let frameCount = 0, lastFpsTime = Date.now();
+
+function log(msg, cls) {
+    const box = document.getElementById('log');
+    const d = document.createElement('div');
+    const ts = new Date().toTimeString().slice(0, 8);
+    d.className = cls || 'inf';
+    d.textContent = '[' + ts + '] ' + msg;
+    box.appendChild(d);
+    box.scrollTop = box.scrollHeight;
+}
+
+function dot(id, color) {
+    document.getElementById(id).className = 'dot ' + color;
+}
+
+function connect() {
+    const ip = document.getElementById('ipInput').value.trim();
+    const url = 'ws://' + ip + ':9090';
+    log('연결 시도: ' + url);
+    dot('wsDot', 'yellow');
+    document.getElementById('wsText').textContent = '연결 중...';
+
+    ros = new ROSLIB.Ros({ url });
+
+    ros.on('connection', () => {
+        log('Rosbridge 연결 성공!', 'ok');
+        dot('wsDot', 'green');
+        document.getElementById('wsText').textContent = '연결됨';
+        subscribeCam();
+    });
+
+    ros.on('error', (e) => {
+        log('연결 오류 — Mixed Content 차단일 수 있음. http:// 로 열었는지 확인', 'err');
+        dot('wsDot', 'red');
+        document.getElementById('wsText').textContent = '오류';
+    });
+
+    ros.on('close', () => {
+        log('연결 끊김', 'err');
+        dot('wsDot', 'red');
+        document.getElementById('wsText').textContent = '끊김';
+    });
+}
+
+function subscribeCam() {
+    topic = new ROSLIB.Topic({
+        ros,
+        name: '/camera/image_raw/compressed',
+        messageType: 'sensor_msgs/CompressedImage',
+        throttle_rate: 100,
+        queue_length: 1,
+    });
+
+    log('/camera/image_raw/compressed 구독 시작', 'ok');
+    dot('camDot', 'yellow');
+    document.getElementById('camText').textContent = '대기 중...';
+
+    topic.subscribe((msg) => {
+        const img = document.getElementById('camImg');
+        img.src = 'data:image/jpeg;base64,' + msg.data;
+        img.style.display = 'block';
+        document.getElementById('ph').style.display = 'none';
+        dot('camDot', 'green');
+        document.getElementById('camText').textContent = '수신 중';
+
+        frameCount++;
+        const now = Date.now();
+        if (now - lastFpsTime >= 1000) {
+            document.getElementById('fpsText').textContent = frameCount + ' fps';
+            frameCount = 0;
+            lastFpsTime = now;
+        }
+    });
+}
+
+function disconnect() {
+    if (topic) { topic.unsubscribe(); topic = null; }
+    if (ros)   { ros.close(); ros = null; }
+    document.getElementById('camImg').style.display = 'none';
+    document.getElementById('ph').style.display = '';
+    dot('wsDot', ''); dot('camDot', '');
+    document.getElementById('wsText').textContent = '대기';
+    document.getElementById('camText').textContent = '카메라 대기';
+    document.getElementById('fpsText').textContent = '';
+    log('연결 종료');
+}
+</script>
+</body>
+</html>
