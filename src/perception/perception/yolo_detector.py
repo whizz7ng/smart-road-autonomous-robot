@@ -1,4 +1,3 @@
-yolo_detector.py
 import sys
 import os
 import json
@@ -8,7 +7,6 @@ sys.path.append('/opt/ros/jazzy/lib/python3.12/site-packages')
 
 import rclpy
 from rclpy.node import Node
-from rclpy.qos import qos_profile_sensor_data
 from sensor_msgs.msg import Image
 from std_msgs.msg import String  # Eng B에게 JSON을 보내기 위한 메시지 타입
 from cv_bridge import CvBridge
@@ -51,17 +49,13 @@ class RobotPerceptionNode(Node):
             
             # 3. 카메라 토픽 구독
             self.subscription = self.create_subscription(
-                Image,
-                '/camera/image_raw',
-                self.image_callback,
-                qos_profile_sensor_data
-            )
+                Image, '/camera/image_raw', self.image_callback, 10)
             
             # 4. 이미지 더블 버퍼링 변수 및 0.1초(10Hz) 주기 연산 타이머 설정
             self.latest_frame = None
             self.timer = self.create_timer(0.1, self.process_timer_callback)
             
-            self.get_logger().info('구독 및 0.1초 제어 주기 타이머 설정 완료.55555555555')
+            self.get_logger().info('구독 및 0.1초 제어 주기 타이머 설정 완료.2222222222')
             
         except Exception as e:
             self.get_logger().error(f'초기화 중 오류 발생: {e}')
