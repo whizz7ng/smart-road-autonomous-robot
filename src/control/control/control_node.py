@@ -23,11 +23,11 @@ PUBLISH_PERIOD = 1.0 / PUBLISH_RATE_HZ
 
 class DrivingNode(Node):
     def __init__(self):
-        super().__init__('driving_node')
+        super().__init__('control_node')
 
         self.pub = self.create_publisher(String, MOTOR_CMD_TOPIC, 10)
 
-        self.get_logger().info('[READY] driving_node started')
+        self.get_logger().info('[READY] control_node started')
 
         # 노드 시작 후 바로 테스트 실행
         self.run_test()
@@ -93,11 +93,7 @@ class DrivingNode(Node):
         self.get_logger().info('[TEST] forward 3 sec')
         self.drive_for(120, 120, 3.0)
 
-        # 2. 후진 3초
-        self.get_logger().info('[TEST] backward 3 sec')
-        self.drive_for(-120, -120, 3.0)
-
-        # 3. 정지 (estop은 latch 되므로 한 번이면 충분하지만, 안전하게 몇 번 보냄)
+        # 2. 정지 (estop은 latch 되므로 한 번이면 충분하지만, 안전하게 몇 번 보냄)
         self.get_logger().info('[TEST] emergency stop')
         for _ in range(5):
             self.publish_estop()
