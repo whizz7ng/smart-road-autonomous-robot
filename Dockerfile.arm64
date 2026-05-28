@@ -23,13 +23,15 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     python3-lark \
     ros-jazzy-cv-bridge \
     ros-jazzy-image-transport \
+    ros-jazzy-image-transport-plugins \
+    ros-jazzy-compressed-image-transport \
+    ros-jazzy-rosbridge-suite \
     ros-jazzy-rmw-cyclonedds-cpp \
     ros-jazzy-teleop-twist-keyboard \
     v4l-utils \
     && rm -rf /var/lib/apt/lists/*
 
 RUN pip3 install --no-cache-dir --break-system-packages --ignore-installed \
-    "setuptools==68.2.2" \
     "numpy<2" \
     opencv-python-headless \
     pyserial \

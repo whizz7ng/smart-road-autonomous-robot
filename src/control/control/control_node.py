@@ -90,8 +90,8 @@ class DrivingNode(Node):
         time.sleep(1.0)
 
         # 1. 전진 3초
-        self.get_logger().info('[TEST] forward 3 sec')
-        self.drive_for(120, 120, 3.0)
+        self.get_logger().info('[TEST] forward 15 sec')
+        self.drive_for(120, 120, 15.0)
 
         # 2. 정지 (estop은 latch 되므로 한 번이면 충분하지만, 안전하게 몇 번 보냄)
         self.get_logger().info('[TEST] emergency stop')
