@@ -2,7 +2,6 @@
 CONTAINER_NAME="smart-road-pi4"
 IMAGE_NAME="smart-road-pi4:latest"
 WORKSPACE="$(cd "$(dirname "$0")/.." && pwd)"
-
 SERIAL_PORT="/dev/ttyAMA0"
 SERIAL_ARGS=""
 if [ -e "$SERIAL_PORT" ]; then
@@ -11,7 +10,6 @@ if [ -e "$SERIAL_PORT" ]; then
 else
     echo "[WARN] $SERIAL_PORT 없음. 시리얼 없이 실행"
 fi
-
 if [ "$(docker ps -q -f name=$CONTAINER_NAME)" ]; then
     echo "[INFO] 기존 컨테이너 접속"
     docker exec -it $CONTAINER_NAME bash
@@ -19,7 +17,7 @@ elif [ "$(docker ps -aq -f name=$CONTAINER_NAME)" ]; then
     echo "[INFO] 중지된 컨테이너 재시작"
     docker start -ai $CONTAINER_NAME
 else
-    echo "[INFO] 새 컨테이너 생성"
+    echo "[INFO] 새 컨테이너 생성 (가제보 패키지 제외 후 빌드)"
     docker run -it \
         --name $CONTAINER_NAME \
         --net=host \
@@ -29,5 +27,6 @@ else
         -v "$WORKSPACE:/ros2_ws" \
         -e ROS_DOMAIN_ID=42 \
         -e RMW_IMPLEMENTATION=rmw_cyclonedds_cpp \
-        $IMAGE_NAME
+        $IMAGE_NAME \
+        bash -c "colcon build --symlink-install --packages-ignore agv_robot traffic_light_plugin project2_esp32 && source install/setup.bash && exec bash"
 fi
