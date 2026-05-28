@@ -26,7 +26,7 @@ def generate_launch_description():
     show_window = LaunchConfiguration('show_window')
 
     declare_device_id = DeclareLaunchArgument(
-        'device_id', default_value='1',
+        'device_id', default_value='0',
         description='카메라 디바이스 번호 (/dev/videoN의 N)',
     )
     declare_frame_width = DeclareLaunchArgument(
