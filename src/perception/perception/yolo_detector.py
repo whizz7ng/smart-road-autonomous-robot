@@ -1,3 +1,4 @@
+yolo_detector.py
 import sys
 import os
 import json
@@ -91,9 +92,9 @@ class RobotPerceptionNode(Node):
             
             # Eng B 전송용 기본 구조체 정의
             yolo_data = {
-                "has_obstacle": False,   # 장애물 유무
-                "traffic_light": "none", # 신호등 상태 ("none", "red", "green_straight", "green_left")
-                "sign": "none"           # 표지판 상태 ("none", "stop", "speed_30", "speed_50" 등)
+                "obstacles": [],         # 장애물 리스트 (높이 정보 포함)
+                "traffic_light": {"state": "none", "height": 0}, 
+                "sign": {"type": "none", "height": 0}
             }
             
             # 로그용 리스트 초기화 추가
@@ -108,24 +109,30 @@ class RobotPerceptionNode(Node):
                     cls_name = self.model.names[cls_id] 
                     detected_classes.append(cls_name)
                     
+                    # 픽셀 기반 바운딩 박스 높이 계산 (yolo 좌표는 [x, y, w, h])
+                    box_h = float(box.xywh[0][3])
+                    
                     # 1) 장애물 감지 (필요 시 클래스 이름 추가)
                     if cls_name in ["person", "obstacle", "box"]:
-                        yolo_data["has_obstacle"] = True
+                        yolo_data["obstacles"].append({
+                            "type": cls_name,
+                            "height": round(box_h, 2)
+                        })
                         
                     # 2) 신호등 상태 매핑
                     elif cls_name in ["greenlight", "yellowlight", "redlight", "traffic_light_red", "traffic_left_light_green"]:
                         if cls_name == "redlight" or cls_name == "traffic_light_red":
-                            yolo_data["traffic_light"] = "red"
+                            yolo_data["traffic_light"] = {"state": "red", "height": round(box_h, 2)}
                         elif cls_name == "traffic_left_light_green":
-                            yolo_data["traffic_light"] = "green_left"
+                            yolo_data["traffic_light"] = {"state": "green_left", "height": round(box_h, 2)}
                         elif cls_name == "greenlight":
-                            yolo_data["traffic_light"] = "green_straight"
+                            yolo_data["traffic_light"] = {"state": "green_straight", "height": round(box_h, 2)}
                     
                     # 3) 표지판 매핑
                     elif cls_name == "stop_sign":
-                        yolo_data["sign"] = "stop"
+                        yolo_data["sign"] = {"type": "stop", "height": round(box_h, 2)}
                     elif cls_name == "limit_sign":
-                        yolo_data["sign"] = "speed_limit" # 모델이 limit_sign을 인식함
+                        yolo_data["sign"] = {"type": "speed_limit", "height": round(box_h, 2)}
 
                         
 
@@ -225,15 +232,15 @@ class RobotPerceptionNode(Node):
                 opencv_data["is_crosswalk"] = False
 
             # YOLO 변화 체크
-            if yolo_data["has_obstacle"] != self.prev_obstacle or yolo_data["sign"] != self.prev_sign:
-                log_msgs.append(f'[YOLO] 장애물: {yolo_data["has_obstacle"]} | 표지판: {yolo_data["sign"]}')
-                self.prev_obstacle = yolo_data["has_obstacle"]
-                self.prev_sign = yolo_data["sign"]
+            if len(yolo_data["obstacles"]) > 0 or yolo_data["sign"]["type"] != self.prev_sign:
+                log_msgs.append(f'[YOLO] 장애물 감지됨: {len(yolo_data["obstacles"])}개 | 표지판: {yolo_data["sign"]["type"]}')
+                self.prev_obstacle = len(yolo_data["obstacles"]) > 0
+                self.prev_sign = yolo_data["sign"]["type"]
                 
             # OpenCV 변화 체크 (Lane Offset은 민감하므로 어느 정도 오차범위 5px 이상일 때만)
             if opencv_data["is_stop_line"] != self.prev_stop_line or \
                opencv_data["is_crosswalk"] != self.prev_crosswalk or \
-            (self.prev_lane_offset is None or abs(opencv_data["lane_offset"] - self.prev_lane_offset) > 5):
+           (self.prev_lane_offset is None or abs(opencv_data["lane_offset"] - self.prev_lane_offset) > 5):
                 log_msgs.append(f'[OpenCV] Lane Offset: {opencv_data["lane_offset"]}px | 정지선: {opencv_data["is_stop_line"]} | 횡단보도: {opencv_data["is_crosswalk"]}')
                 self.prev_lane_offset = opencv_data["lane_offset"]
                 self.prev_stop_line = opencv_data["is_stop_line"]
