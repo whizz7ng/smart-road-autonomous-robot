@@ -13,37 +13,42 @@ const char* WIFI_PASSWORD = "12345678";
 const char* OTA_HOSTNAME  = "esp32";
 const char* OTA_PASSWORD  = "ota1234";
 
+// 세이프 모드 폴백 AP
 const char* AP_SSID     = "UGV-Recovery";
 const char* AP_PASSWORD = "recovery123";
 
 const int WIFI_TIMEOUT_SEC = 15;
 
-// UART (라즈파이): UART0 = Serial = GPIO 1(TX), 3(RX) - PCB 직결
-const uint32_t UART_BAUD = 115200;
-
-// 디버그 UDP (USB Serial 못 쓰니까 디버그는 WiFi로)
-const uint16_t DEBUG_PORT = 4212;
-WiFiUDP udpDebug;
-IPAddress broadcastIP(192, 168, 0, 255);
+// UDP 포트
+const uint16_t CMD_PORT       = 4210;   // PC -> ESP32 명령
+const uint16_t TELEMETRY_PORT = 4211;   // ESP32 -> PC IMU 데이터
+// PC IP는 첫 명령 패킷 받을 때 자동으로 학습함. (브로드캐스트 폴백 가능)
 
 // =============================================================
 //                  모터 (TB6612FNG) 핀
+//   ※ 실제 보드 배선 기준 (어제 동료 확인 완료)
+//   STBY는 보드에서 3.3V 직결로 추정 → 코드 제어 X
 // =============================================================
-#define PIN_AIN1  21
-#define PIN_AIN2  17
-#define PIN_PWMA  25
-#define PIN_BIN1  22
-#define PIN_BIN2  23
-#define PIN_PWMB  26
+#define PIN_AIN1  21   // A모터 방향1
+#define PIN_AIN2  17   // A모터 방향2
+#define PIN_PWMA  25   // A모터 PWM
+#define PIN_BIN1  22   // B모터 방향1
+#define PIN_BIN2  23   // B모터 방향2
+#define PIN_PWMB  26   // B모터 PWM
 
-#define PWM_CH_A     0
-#define PWM_CH_B     1
-#define PWM_FREQ     20000
-#define PWM_RES_BITS 8
+// 엔코더 핀 (현재는 미사용, 나중에 PID 제어용)
+// AENCA=35, AENCB=34, BENCA=27, BENCB=16
 
-const uint8_t SPEED_FWD   = 180;
-const uint8_t SPEED_TURN  = 150;
-const uint8_t SPEED_PIVOT = 160;
+// PWM 설정 (ESP32 Arduino core 2.x: ledcSetup + ledcAttachPin)
+#define PWM_CH_A     0       // A모터 PWM 채널
+#define PWM_CH_B     1       // B모터 PWM 채널
+#define PWM_FREQ     20000   // 20kHz (가청 영역 회피)
+#define PWM_RES_BITS 8       // 0~255
+
+// 기본 속도 (0~255). 필요시 조절.
+const uint8_t SPEED_FWD   = 100;
+const uint8_t SPEED_TURN  = 50;   // 완만한 회전 안쪽 바퀴
+const uint8_t SPEED_PIVOT = 110;   // 제자리 회전
 
 // 워치독: 마지막 명령 후 이 시간 지나면 자동 정지
 const unsigned long CMD_TIMEOUT_MS = 500;
@@ -91,27 +96,17 @@ bool imuReady = false;
 // =============================================================
 //                  전역 상태
 // =============================================================
-bool wifiConnected = false;
-bool otaRunning = false;
-unsigned long lastCmdMs = 0;
-char currentCmd = 'S';
+WiFiUDP udpCmd;
+WiFiUDP udpTel;
 
-// =============================================================
-//                  디버그 (UDP only - UART0는 라즈파이와 공유라 못 씀)
-// =============================================================
-void dbg(const char* fmt, ...) {
-  char buf[256];
-  va_list args;
-  va_start(args, fmt);
-  int n = vsnprintf(buf, sizeof(buf), fmt, args);
-  va_end(args);
-  if (WiFi.status() == WL_CONNECTED) {
-    udpDebug.beginPacket(broadcastIP, DEBUG_PORT);
-    udpDebug.write((const uint8_t*)buf, n);
-    udpDebug.write('\n');
-    udpDebug.endPacket();
-  }
-}
+bool wifiConnected = false;
+IPAddress pcAddr;          // PC IP 자동 학습용
+bool      pcAddrKnown = false;
+
+unsigned long lastCmdMs = 0;
+
+// 현재 명령 (텔레메트리에 같이 실어줌)
+char currentCmd = 'S';
 
 // =============================================================
 //                  모터 제어
@@ -125,15 +120,15 @@ void motorStop() {
   ledcWrite(PWM_CH_B, 0);
 }
 
-// 회전 방향이 이전 단계에서 반대였어서 HIGH/LOW 뒤집어둠
+// A모터(좌): speed > 0 전진, < 0 후진, 0 정지
 void setLeft(int16_t speed) {
   uint8_t pwm = (uint8_t)constrain(abs(speed), 0, 255);
   if (speed > 0) {
-    digitalWrite(PIN_AIN1, LOW);
-    digitalWrite(PIN_AIN2, HIGH);
+    digitalWrite(PIN_AIN1, LOW);   // HIGH → LOW
+    digitalWrite(PIN_AIN2, HIGH);  // LOW → HIGH
   } else if (speed < 0) {
-    digitalWrite(PIN_AIN1, HIGH);
-    digitalWrite(PIN_AIN2, LOW);
+    digitalWrite(PIN_AIN1, HIGH);  // LOW → HIGH
+    digitalWrite(PIN_AIN2, LOW);   // HIGH → LOW
   } else {
     digitalWrite(PIN_AIN1, LOW);
     digitalWrite(PIN_AIN2, LOW);
@@ -144,11 +139,11 @@ void setLeft(int16_t speed) {
 void setRight(int16_t speed) {
   uint8_t pwm = (uint8_t)constrain(abs(speed), 0, 255);
   if (speed > 0) {
-    digitalWrite(PIN_BIN1, LOW);
-    digitalWrite(PIN_BIN2, HIGH);
+    digitalWrite(PIN_BIN1, LOW);   // HIGH → LOW
+    digitalWrite(PIN_BIN2, HIGH);  // LOW → HIGH
   } else if (speed < 0) {
-    digitalWrite(PIN_BIN1, HIGH);
-    digitalWrite(PIN_BIN2, LOW);
+    digitalWrite(PIN_BIN1, HIGH);  // LOW → HIGH
+    digitalWrite(PIN_BIN2, LOW);   // HIGH → LOW
   } else {
     digitalWrite(PIN_BIN1, LOW);
     digitalWrite(PIN_BIN2, LOW);
@@ -162,6 +157,7 @@ void setupMotors() {
   pinMode(PIN_BIN1, OUTPUT);
   pinMode(PIN_BIN2, OUTPUT);
 
+  // ESP32 Arduino core 2.x 의 옛 API
   ledcSetup(PWM_CH_A, PWM_FREQ, PWM_RES_BITS);
   ledcSetup(PWM_CH_B, PWM_FREQ, PWM_RES_BITS);
   ledcAttachPin(PIN_PWMA, PWM_CH_A);
@@ -172,28 +168,28 @@ void setupMotors() {
 
 void applyCommand(char c) {
   switch (c) {
-    case 'W':
+    case 'W':   // 직진
       setLeft( SPEED_FWD);
       setRight(SPEED_FWD);
       break;
-    case 'A':
+    case 'A':   // 완만한 좌회전 (좌 느리게, 우 정상)
       setLeft( SPEED_TURN);
       setRight(SPEED_FWD);
       break;
-    case 'D':
+    case 'D':   // 완만한 우회전
       setLeft( SPEED_FWD);
       setRight(SPEED_TURN);
       break;
-    case 'Q':
+    case 'Q':   // 제자리 좌회전 (좌 후진, 우 전진)
       setLeft(-SPEED_PIVOT);
       setRight( SPEED_PIVOT);
       break;
-    case 'E':
+    case 'E':   // 제자리 우회전
       setLeft( SPEED_PIVOT);
       setRight(-SPEED_PIVOT);
       break;
-    case 'S':
-    case 'X':
+    case 'S':   // 정지
+    case 'X':   // 비상정지
     default:
       motorStop();
       c = 'S';
@@ -203,7 +199,7 @@ void applyCommand(char c) {
 }
 
 // =============================================================
-//                  I2C / IMU 헬퍼
+//                  I2C / IMU 헬퍼 (imu_test.ino와 동일)
 // =============================================================
 void writeReg(uint8_t addr, uint8_t reg, uint8_t val) {
   Wire.beginTransmission(addr);
@@ -234,7 +230,7 @@ bool qmi8658Init() {
   writeReg(QMI8658_ADDR, QMI8658_RESET, 0xB0);
   delay(50);
   uint8_t whoami = readReg(QMI8658_ADDR, QMI8658_WHO_AM_I);
-  dbg("QMI8658 WHO_AM_I: 0x%02X", whoami);
+  Serial.printf("QMI8658 WHO_AM_I: 0x%02X\n", whoami);
   if (whoami != 0x05) return false;
 
   writeReg(QMI8658_ADDR, QMI8658_CTRL1, 0x60);
@@ -271,7 +267,7 @@ bool qmi8658Read(float acc[3], float gyro[3]) {
 
 bool ak09918Init() {
   uint8_t wia = readReg(AK09918_ADDR, AK09918_WIA2);
-  dbg("AK09918 WIA2: 0x%02X", wia);
+  Serial.printf("AK09918 WIA2: 0x%02X\n", wia);
   if (wia != 0x0C) return false;
   writeReg(AK09918_ADDR, AK09918_CNTL2, AK09918_CONT_100HZ);
   delay(10);
@@ -295,8 +291,9 @@ bool ak09918Read(float mag[3]) {
 }
 
 void calibrateIMU() {
-  dbg(">>> Calibrating IMU (keep still for 3s)");
+  Serial.println(">>> 평평한 곳에 가만히 (3초 후 캘리브레이션)");
   delay(3000);
+  Serial.println("Calibrating...");
 
   float accSum[3] = {0}, gyroSum[3] = {0};
   int count = 0;
@@ -318,8 +315,8 @@ void calibrateIMU() {
     }
     accOffset[2] -= 1.0f;
   }
-  dbg("Acc  Offset: %.4f %.4f %.4f", accOffset[0], accOffset[1], accOffset[2]);
-  dbg("Gyro Offset: %.4f %.4f %.4f", gyroOffset[0], gyroOffset[1], gyroOffset[2]);
+  Serial.printf("Acc  Offset: %.4f %.4f %.4f\n", accOffset[0], accOffset[1], accOffset[2]);
+  Serial.printf("Gyro Offset: %.4f %.4f %.4f\n", gyroOffset[0], gyroOffset[1], gyroOffset[2]);
 }
 
 void mahonyUpdate(float gx, float gy, float gz,
@@ -376,6 +373,7 @@ void mahonyUpdate(float gx, float gy, float gz,
 //                  WiFi / OTA
 // =============================================================
 void setupWiFi() {
+  Serial.println("\n--- WiFi Setup ---");
   WiFi.mode(WIFI_STA);
   WiFi.disconnect();
   delay(100);
@@ -390,15 +388,20 @@ void setupWiFi() {
   int retries = 0;
   while (WiFi.status() != WL_CONNECTED && retries < WIFI_TIMEOUT_SEC * 2) {
     delay(500);
+    Serial.print(".");
     retries++;
   }
 
   if (WiFi.status() == WL_CONNECTED) {
-    WiFi.setSleep(false);
     wifiConnected = true;
+    Serial.print("\nWiFi connected. IP: ");
+    Serial.println(WiFi.localIP());
   } else {
+    Serial.println("\nWiFi failed. Starting AP recovery...");
     WiFi.mode(WIFI_AP);
     WiFi.softAP(AP_SSID, AP_PASSWORD);
+    Serial.print("AP IP: ");
+    Serial.println(WiFi.softAPIP());
   }
 }
 
@@ -407,73 +410,89 @@ void setupOTA() {
   ArduinoOTA.setPassword(OTA_PASSWORD);
 
   ArduinoOTA.onStart([]() {
-    otaRunning = true;
-    dbg("OTA: Start - stopping motors");
-    motorStop();
+    Serial.println("OTA: Start - stopping motors");
+    motorStop();   // 안전: OTA 중 모터 정지
   });
-  ArduinoOTA.onEnd([]() { dbg("OTA: End"); });
+  ArduinoOTA.onEnd([]() { Serial.println("\nOTA: End"); });
+  ArduinoOTA.onProgress([](unsigned int p, unsigned int t) {
+    Serial.printf("OTA: %u%%\r", (p / (t / 100)));
+  });
   ArduinoOTA.onError([](ota_error_t err) {
-    dbg("OTA Error[%u]", err);
+    Serial.printf("OTA Error[%u]\n", err);
   });
 
   ArduinoOTA.begin();
+  Serial.println("OTA Ready.");
 }
 
 // =============================================================
-//                  UART 명령 수신 (라즈파이 → ESP32)
+//                  UDP 명령 수신
 // =============================================================
-void handleUartCommand() {
-  while (Serial.available()) {
-    char c = Serial.read();
-    // 줄바꿈/공백 무시
-    if (c == '\n' || c == '\r' || c == ' ') continue;
-    c = toupper(c);   // 소문자 w/a/s/d/x 도 처리
-    applyCommand(c);
-    lastCmdMs = millis();
-    dbg("[cmd] %c", c);
-  }
+void handleUdpCommand() {
+  int packetSize = udpCmd.parsePacket();
+  if (packetSize <= 0) return;
+
+  // PC 주소 학습
+  pcAddr = udpCmd.remoteIP();
+  pcAddrKnown = true;
+
+  char buf[8] = {0};
+  int len = udpCmd.read(buf, sizeof(buf) - 1);
+  if (len <= 0) return;
+
+  char c = toupper(buf[0]);
+  applyCommand(c);
+  lastCmdMs = millis();
 }
 
 // 워치독: 일정 시간 명령 없으면 자동 정지
 void checkWatchdog() {
   if (currentCmd != 'S' && (millis() - lastCmdMs > CMD_TIMEOUT_MS)) {
-    dbg("[watchdog] timeout -> STOP");
+    Serial.println("[watchdog] no command -> STOP");
     applyCommand('S');
   }
 }
 
 // =============================================================
-//                  IMU 텔레메트리 송신 (UART → 라즈파이, 50Hz)
-//   Eng A 명세 형식:
-//     "RPY: <roll> <pitch> <yaw>\n"
-//     "ACC: <ax> <ay> <az> GYRO: <gx> <gy> <gz>\n"
+//                  IMU 텔레메트리 송신 (50Hz)
 // =============================================================
-void sendTelemetryUart(float roll, float pitch, float yaw,
-                       float ax, float ay, float az,
-                       float gx, float gy, float gz) {
-  Serial.printf("RPY: %.2f %.2f %.2f\n", roll, pitch, yaw);
-  Serial.printf("ACC: %.3f %.3f %.3f GYRO: %.2f %.2f %.2f\n",
-                ax, ay, az, gx, gy, gz);
+void sendTelemetry(float roll, float pitch, float yaw,
+                   float ax, float ay, float az,
+                   float gx, float gy, float gz) {
+  if (!wifiConnected) return;
+  if (!pcAddrKnown)   return;   // PC가 한 번 명령 보낸 후에야 주소 알 수 있음
+
+  char json[256];
+  int n = snprintf(json, sizeof(json),
+    "{\"t\":%lu,\"cmd\":\"%c\",\"roll\":%.2f,\"pitch\":%.2f,\"yaw\":%.2f,"
+    "\"ax\":%.3f,\"ay\":%.3f,\"az\":%.3f,"
+    "\"gx\":%.2f,\"gy\":%.2f,\"gz\":%.2f}",
+    millis(), currentCmd, roll, pitch, yaw, ax, ay, az, gx, gy, gz);
+
+  udpTel.beginPacket(pcAddr, TELEMETRY_PORT);
+  udpTel.write((const uint8_t*)json, n);
+  udpTel.endPacket();
 }
 
 // =============================================================
 //                  Setup / Loop
 // =============================================================
 void setup() {
-  // UART0 = 라즈파이 통신 채널
-  Serial.begin(UART_BAUD);
+  Serial.begin(115200);
   delay(500);
+  Serial.println("\n=== UGV ESP32 Boot ===");
 
   setupMotors();
+  Serial.println("Motors initialized (stopped).");
+
   setupWiFi();
   setupOTA();
 
-  dbg("=== UGV ESP32 Boot ===");
-  dbg("UART0 (Serial) connected to Pi at %u baud", UART_BAUD);
-  dbg("WiFi: %s, IP: %s",
-      wifiConnected ? "STA connected" : "AP recovery",
-      wifiConnected ? WiFi.localIP().toString().c_str()
-                    : WiFi.softAPIP().toString().c_str());
+  if (wifiConnected) {
+    udpCmd.begin(CMD_PORT);
+    Serial.printf("UDP command listening on %u\n", CMD_PORT);
+    Serial.printf("Telemetry will be sent to learned PC IP : %u\n", TELEMETRY_PORT);
+  }
 
   // IMU
   Wire.begin(S_SDA, S_SCL);
@@ -484,27 +503,25 @@ void setup() {
     calibrateIMU();
     lastUpdate = micros();
     imuReady = true;
-    dbg("IMU ready");
+    Serial.println("IMU ready.");
   } else {
-    dbg("IMU init FAILED - continuing without IMU");
+    Serial.println("IMU init FAILED - continuing without IMU.");
   }
 
-  dbg(">>> Setup complete <<<");
+  Serial.println(">>> Setup complete <<<");
 }
 
 void loop() {
   ArduinoOTA.handle();
-  if (!otaRunning) {
-    handleUartCommand();
-  }
+  handleUdpCommand();
   checkWatchdog();
 
+  // IMU 100Hz 업데이트, 텔레메트리 50Hz 송신
   static unsigned long lastImuMs = 0;
   static unsigned long lastTelMs = 0;
   static float lastRoll = 0, lastPitch = 0, lastYaw = 0;
   static float lastAcc[3] = {0,0,0}, lastGyro[3] = {0,0,0};
 
-  // IMU 100Hz 업데이트
   if (imuReady && millis() - lastImuMs >= 10) {
     lastImuMs = millis();
     float acc[3], gyro[3], mag[3];
@@ -527,22 +544,22 @@ void loop() {
     }
   }
 
-  // 텔레메트리 50Hz (UART로 라즈파이에 송신)
-  if (!otaRunning && millis() - lastTelMs >= 20) {
+  if (millis() - lastTelMs >= 20) {   // 50Hz
     lastTelMs = millis();
     if (imuReady) {
-      sendTelemetryUart(lastRoll, lastPitch, lastYaw,
-                        lastAcc[0], lastAcc[1], lastAcc[2],
-                        lastGyro[0], lastGyro[1], lastGyro[2]);
+      sendTelemetry(lastRoll, lastPitch, lastYaw,
+                    lastAcc[0], lastAcc[1], lastAcc[2],
+                    lastGyro[0], lastGyro[1], lastGyro[2]);
     }
   }
 
-  // 살아있음 로그 (UDP)
+  // 살아있다는 신호
   static unsigned long lastBeat = 0;
   if (millis() - lastBeat > 10000) {
     lastBeat = millis();
-    dbg("[alive] cmd=%c ip=%s", currentCmd,
-        wifiConnected ? WiFi.localIP().toString().c_str() : WiFi.softAPIP().toString().c_str());
+    Serial.printf("[alive] mode=%s ip=%s cmd=%c pcKnown=%d\n",
+      wifiConnected ? "STA" : "AP",
+      wifiConnected ? WiFi.localIP().toString().c_str() : WiFi.softAPIP().toString().c_str(),
+      currentCmd, pcAddrKnown);
   }
-  delay(1);
 }
