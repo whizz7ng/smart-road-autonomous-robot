@@ -68,7 +68,7 @@ const unsigned long CMD_TIMEOUT_MS = 500;
 const float PULSES_PER_REV = 1320.0f;
 
 // 좌/우 방향 부호 (방향 반대로 나오면 -1로 뒤집기)
-const int8_t ENC_L_DIR = -1;
+const int8_t ENC_L_DIR = 1;
 const int8_t ENC_R_DIR = 1;
 
 // 누적 틱 (PCNT 16bit overflow 보정용)
@@ -330,7 +330,7 @@ void checkWatchdog() {
 // =============================================================
 //                  텔레메트리 송신
 // =============================================================
-// IMU: UDP 로만 송신 (UART 전송 제거 - Pi 는 IMU 를 쓰지 않음)
+// IMU: Serial(Pi)로 보내고 UDP로도 미러링
 void sendImuJson(float roll, float pitch, float yaw,
                  float ax, float ay, float az,
                  float gx, float gy, float gz) {
@@ -341,8 +341,8 @@ void sendImuJson(float roll, float pitch, float yaw,
     "\"gx\":%.2f,\"gy\":%.2f,\"gz\":%.2f}\n",
     roll, pitch, yaw, ax, ay, az, gx, gy, gz);
   if (n > 0) {
-    // [removed] IMU 는 더 이상 UART 로 보내지 않음 (Pi 쪽에서 읽지 않았음)
-    udpSend(buf, n);                         // PC로 미러링 (UDP) - 유지
+    Serial.write((const uint8_t*)buf, n);   // Pi로 (UART)
+    udpSend(buf, n);                         // PC로 미러링 (UDP)
   }
 }
 
