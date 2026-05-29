@@ -23,6 +23,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     python3-lark \
     ros-jazzy-cv-bridge \
     ros-jazzy-image-transport \
+    ros-jazzy-image-transport-plugins \
+    ros-jazzy-compressed-image-transport \
+    ros-jazzy-rosbridge-suite \
     ros-jazzy-rmw-cyclonedds-cpp \
     ros-jazzy-teleop-twist-keyboard \
     v4l-utils \
