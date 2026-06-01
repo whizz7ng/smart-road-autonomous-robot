@@ -1,5 +1,4 @@
 #!/bin/bash
-
 CONTAINER_NAME="smart-road"
 IMAGE_NAME="smart-road-pi4:latest"
 ROS_SETUP="/opt/ros/jazzy/setup.bash"
@@ -25,10 +24,12 @@ docker run -d \
     -e DISPLAY=$DISPLAY \
     -e ROS_DOMAIN_ID=42 \
     -e RMW_IMPLEMENTATION=rmw_cyclonedds_cpp \
+    -e CYCLONEDDS_URI='<CycloneDDS><Domain><General><Interfaces><NetworkInterface name="wlan0"/></Interfaces></General><Discovery><Peers><Peer Address="192.168.0.139"/></Peers><ParticipantIndex>auto</ParticipantIndex></Discovery></Domain></CycloneDDS>' \
     -v /tmp/.X11-unix:/tmp/.X11-unix \
     -v $WS_PATH:/ros2_ws \
     --device=/dev/video0:/dev/video0 \
     --device=/dev/ttyAMA0:/dev/ttyAMA0 \
+    --device=/dev/ttyUSB0:/dev/ttyUSB0 \
     $IMAGE_NAME \
     sleep infinity
 
@@ -39,35 +40,21 @@ log "rosbridge 설치 확인 중..."
 docker exec -u root $CONTAINER_NAME bash -c \
     "apt-get install -y ros-jazzy-rosbridge-suite ros-jazzy-compressed-image-transport -qq 2>/dev/null"
 
-log "republisher.py 복사 중..."
-docker exec $CONTAINER_NAME bash -c "cp /ros2_ws/republisher.py /tmp/republisher.py"
-
 log "rosbridge 시작 중..."
 docker exec -d $CONTAINER_NAME bash -c \
     "source $ROS_SETUP && \
      ROS_DOMAIN_ID=42 RMW_IMPLEMENTATION=rmw_cyclonedds_cpp \
      ros2 launch rosbridge_server rosbridge_websocket_launch.xml \
      > /tmp/rosbridge.log 2>&1"
-
 sleep 5
 
-log "perception 시작 중..."
+log "camera 시작 중..."
 docker exec -d $CONTAINER_NAME bash -c \
     "source $ROS_SETUP && source $WS_SETUP && \
      ROS_DOMAIN_ID=42 RMW_IMPLEMENTATION=rmw_cyclonedds_cpp \
-     ros2 launch perception perception.launch.py \
+     ros2 run perception camera_node \
      > /tmp/perception.log 2>&1"
-
 sleep 8
-
-log "republisher 시작 중..."
-docker exec -d $CONTAINER_NAME bash -c \
-    "source $ROS_SETUP && source $WS_SETUP && \
-     ROS_DOMAIN_ID=42 RMW_IMPLEMENTATION=rmw_cyclonedds_cpp \
-     python3 /tmp/republisher.py \
-     > /tmp/republisher.log 2>&1"
-
-sleep 5
 
 log "────────────────────────────────────────"
 log "모든 서비스 시작 완료!"
