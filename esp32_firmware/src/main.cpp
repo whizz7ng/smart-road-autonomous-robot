@@ -23,10 +23,14 @@ const int WIFI_TIMEOUT_SEC = 15;
 // UART (라즈파이): UART0 = Serial = GPIO 1(TX), 3(RX) - PCB 직결
 const uint32_t UART_BAUD = 115200;
 
-// 디버그 UDP (USB Serial 못 쓰니까 디버그는 WiFi로)
+// 디버그 + odo 텔레메트리 UDP (USB Serial 못 쓰니까 WiFi로)
 const uint16_t DEBUG_PORT = 4212;
 WiFiUDP udpDebug;
 IPAddress broadcastIP(192, 168, 0, 255);
+
+// 명령 수신 UDP (단일 문자 텔레옵 + JSON 명령 둘 다 받음)
+const uint16_t CMD_PORT = 4211;
+WiFiUDP udpCmd;
 
 // =============================================================
 //                  모터 (TB6612FNG) 핀
@@ -47,6 +51,12 @@ IPAddress broadcastIP(192, 168, 0, 255);
 const int MAX_PWM = 230;
 const int MIN_PWM = 50;
 
+// 텔레옵(UDP 키보드) 모터 속도 (실측 후 조정)
+const int TELE_FWD      = 150;   // 직진
+const int TELE_TURN_OUT = 150;   // 완만 회전: 바깥쪽 바퀴
+const int TELE_TURN_IN  = 80;    // 완만 회전: 안쪽 바퀴
+const int TELE_PIVOT    = 120;   // 제자리 회전
+
 // 워치독: 마지막 명령 후 이 시간 지나면 자동 정지
 const unsigned long CMD_TIMEOUT_MS = 500;
 
@@ -58,20 +68,16 @@ const unsigned long CMD_TIMEOUT_MS = 500;
 #define ENC_R_A 27
 #define ENC_R_B 16
 
-// PCNT 유닛 할당
 #define PCNT_UNIT_L  PCNT_UNIT_0
 #define PCNT_UNIT_R  PCNT_UNIT_1
 
 // JGB37-520 333rpm 기준 펄스/회전 (출력축 기준, 4체배)
-// 데이터시트상 약 11 PPR × 30:1 기어비 × 4 = 1320 PPR
-// 실측 후 조정 필요하면 이 값만 바꾸면 됨
 const float PULSES_PER_REV = 1320.0f;
 
-// 좌/우 방향 부호 (방향 반대로 나오면 -1로 뒤집기)
-const int8_t ENC_L_DIR = -1;
-const int8_t ENC_R_DIR = 1;
+// 좌/우 방향 부호
+const int8_t ENC_L_DIR = 1;
+const int8_t ENC_R_DIR = -1;
 
-// 누적 틱 (PCNT 16bit overflow 보정용)
 int64_t totalTicksL = 0;
 int64_t totalTicksR = 0;
 
@@ -102,8 +108,9 @@ int64_t totalTicksR = 0;
 #define ACC_SCALE  4096.0f
 #define GYRO_SCALE 64.0f
 
-#define Kp 2.0f
-#define Ki 0.005f
+// Mahony AHRS 필터 게인 (IMU 자세추정 전용 — velocity PID 와 무관)
+#define AHRS_KP 2.0f
+#define AHRS_KI 0.005f
 
 float q0 = 1, q1 = 0, q2 = 0, q3 = 0;
 float exInt = 0, eyInt = 0, ezInt = 0;
@@ -224,7 +231,6 @@ void setupEncoderPCNT(pcnt_unit_t unit, int pin_a, int pin_b) {
   cfg.ctrl_gpio_num  = pin_b;
   cfg.channel        = PCNT_CHANNEL_0;
   cfg.unit           = unit;
-  // A 채널 상승/하강 에지에서 카운트, B 채널 레벨로 방향 결정 (2체배)
   cfg.pos_mode       = PCNT_COUNT_INC;
   cfg.neg_mode       = PCNT_COUNT_DEC;
   cfg.lctrl_mode     = PCNT_MODE_REVERSE;
@@ -233,7 +239,6 @@ void setupEncoderPCNT(pcnt_unit_t unit, int pin_a, int pin_b) {
   cfg.counter_l_lim  = -30000;
   pcnt_unit_config(&cfg);
 
-  // 입력 필터 (노이즈 제거, 80MHz 클럭 기준 100tick ≈ 1.25us)
   pcnt_set_filter_value(unit, 100);
   pcnt_filter_enable(unit);
 
@@ -243,7 +248,6 @@ void setupEncoderPCNT(pcnt_unit_t unit, int pin_a, int pin_b) {
 }
 
 void setupEncoders() {
-  // 입력 전용 핀이라 pinMode INPUT만 (풀업은 모터 PCB에 보통 있음. 없으면 INPUT_PULLUP)
   pinMode(ENC_L_A, INPUT);
   pinMode(ENC_L_B, INPUT);
   pinMode(ENC_R_A, INPUT);
@@ -253,12 +257,64 @@ void setupEncoders() {
   setupEncoderPCNT(PCNT_UNIT_R, ENC_R_A, ENC_R_B);
 }
 
-// PCNT는 16bit 카운터라 너무 쌓이기 전에 읽고 클리어 -> 누적은 int64로
 int16_t readAndClearPCNT(pcnt_unit_t unit) {
   int16_t count = 0;
   pcnt_get_counter_value(unit, &count);
   pcnt_counter_clear(unit);
   return count;
+}
+
+// =============================================================
+//          per-wheel velocity PID (목표 RPM 추종)
+//   feedforward: PWM ≈ RPM × FF_GAIN  (실측 90PWM→44RPM → 90/44≈2.05)
+//   각 바퀴 독립 PID. 좌우 모터 효율차도 흡수.
+//   FF가 정상상태를 깔아주므로 Kp/Ki는 오차 보정용으로 작게.
+// =============================================================
+const float FF_GAIN     = 2.05f;
+const float VEL_KP      = 1.5f;    // 실측 튜닝값 (35/40 RPM 검증 완료)
+const float VEL_KI      = 1.0f;
+const float VEL_I_LIMIT = 80.0f;  // 적분 와인드업 한계 (PWM 단위)
+
+// 제어 모드: true = RPM 목표(PID) / false = raw PWM(텔레옵·수동)
+bool    velMode    = false;
+float   targetRpmL = 0, targetRpmR = 0;   // velMode 목표 RPM
+int16_t targetPwmL = 0, targetPwmR = 0;   // PWM 모드 목표
+float   iTermL = 0, iTermR = 0;
+
+void setVelTarget(float l, float r) {
+  velMode = true;
+  targetRpmL = l; targetRpmR = r;
+  lastCmdMs = millis();
+}
+
+void setPwmTarget(int16_t l, int16_t r) {
+  velMode = false;
+  targetPwmL = l; targetPwmR = r;
+  applyPwm(l, r);
+  lastCmdMs = millis();
+}
+
+void resetVelPid() { iTermL = 0; iTermR = 0; }
+
+// 한쪽 바퀴 velocity PID: 목표RPM -> PWM
+int16_t wheelPid(float target, float meas, float dt, float& iTerm) {
+  if (fabsf(target) < 0.5f) { iTerm = 0; return 0; }
+  float ff  = target * FF_GAIN;          // feedforward (부호 포함)
+  float err = target - meas;
+  iTerm += VEL_KI * err * dt;
+  if (iTerm >  VEL_I_LIMIT) iTerm =  VEL_I_LIMIT;
+  if (iTerm < -VEL_I_LIMIT) iTerm = -VEL_I_LIMIT;
+  float out = ff + VEL_KP * err + iTerm;
+  return (int16_t)constrain(out, (float)-MAX_PWM, (float)MAX_PWM);
+}
+
+void velocityControlUpdate(float rpmL, float rpmR, float dt) {
+  if (!velMode) return;                  // PWM 모드는 명령 시점에 이미 적용됨
+  if (targetRpmL == 0 && targetRpmR == 0) {
+    resetVelPid(); applyPwm(0, 0); return;
+  }
+  applyPwm(wheelPid(targetRpmL, rpmL, dt, iTermL),
+           wheelPid(targetRpmR, rpmR, dt, iTermR));
 }
 
 // =============================================================
@@ -274,18 +330,23 @@ void processCommand(const char* json_line) {
 
   const char* type = doc["T"] | "";
 
-  if (strcmp(type, "m") == 0) {
+  if (strcmp(type, "v") == 0) {            // 목표 RPM (closed-loop)
+    float l = doc["L"] | 0.0f;
+    float r = doc["R"] | 0.0f;
+    setVelTarget(l, r);
+    dbg("[cmd v] target rpm L=%.1f R=%.1f", l, r);
+  }
+  else if (strcmp(type, "m") == 0) {       // raw PWM (수동/텔레옵)
     int l = doc["L"] | 0;
     int r = doc["R"] | 0;
-    applyPwm(l, r);
-    lastCmdMs = millis();
-    dbg("[cmd m] L=%d R=%d", l, r);
+    setPwmTarget(l, r);
+    dbg("[cmd m] pwm L=%d R=%d", l, r);
   }
-  else if (strcmp(type, "e") == 0) {
-    motorStop();
-    currentLeft  = 0;
-    currentRight = 0;
-    lastCmdMs = millis();
+  else if (strcmp(type, "e") == 0) {       // 비상정지
+    velMode = false;
+    targetRpmL = targetRpmR = 0; targetPwmL = targetPwmR = 0;
+    resetVelPid(); motorStop();
+    currentLeft = 0; currentRight = 0;
     dbg("[cmd e] emergency stop");
   }
   else if (strcmp(type, "ping") == 0) {
@@ -317,20 +378,58 @@ void handleUart() {
   }
 }
 
+// =============================================================
+//                  UDP 텔레옵 명령 처리
+//   '{' 로 시작하면 JSON 명령(목표 RPM / PID 게인 등) -> processCommand
+//   아니면 단일 문자 텔레옵:
+//     W=직진  S=정지  A=좌(완만)  D=우(완만)
+//     Q=제자리좌  E=제자리우  X=비상정지
+// =============================================================
+void processTeleopChar(char c) {
+  switch (c) {
+    case 'W': case 'w': setPwmTarget(TELE_FWD,  TELE_FWD);          break;
+    case 'S': case 's': setPwmTarget(0, 0);                          break;
+    case 'A': case 'a': setPwmTarget(TELE_TURN_IN,  TELE_TURN_OUT); break;
+    case 'D': case 'd': setPwmTarget(TELE_TURN_OUT, TELE_TURN_IN);  break;
+    case 'Q': case 'q': setPwmTarget(-TELE_PIVOT, TELE_PIVOT);      break;
+    case 'E': case 'e': setPwmTarget(TELE_PIVOT, -TELE_PIVOT);      break;
+    case 'X': case 'x': setPwmTarget(0, 0); resetVelPid(); motorStop();
+                        currentLeft = 0; currentRight = 0;          break;
+    default: return;
+  }
+}
+
+void handleUdpCmd() {
+  int packetSize = udpCmd.parsePacket();
+  if (packetSize <= 0) return;
+
+  char buf[96];
+  int len = udpCmd.read(buf, sizeof(buf) - 1);
+  if (len <= 0) return;
+  buf[len] = '\0';
+
+  if (buf[0] == '{') {            // JSON 명령 (목표 RPM / PID 게인 등)
+    processCommand(buf);
+  } else {                        // 단일 문자 텔레옵
+    processTeleopChar(buf[0]);
+    dbg("[udp cmd] %c -> L=%d R=%d", buf[0], currentLeft, currentRight);
+  }
+}
+
 void checkWatchdog() {
-  bool moving = (currentLeft != 0) || (currentRight != 0);
+  bool moving = velMode ? (targetRpmL != 0 || targetRpmR != 0)
+                        : (targetPwmL != 0 || targetPwmR != 0);
   if (moving && (millis() - lastCmdMs > CMD_TIMEOUT_MS)) {
     dbg("[watchdog] timeout -> STOP");
-    motorStop();
-    currentLeft  = 0;
-    currentRight = 0;
+    targetRpmL = targetRpmR = 0; targetPwmL = targetPwmR = 0;
+    resetVelPid(); motorStop();
+    currentLeft = 0; currentRight = 0;
   }
 }
 
 // =============================================================
 //                  텔레메트리 송신
 // =============================================================
-// IMU: UDP 로만 송신 (UART 전송 제거 - Pi 는 IMU 를 쓰지 않음)
 void sendImuJson(float roll, float pitch, float yaw,
                  float ax, float ay, float az,
                  float gx, float gy, float gz) {
@@ -341,25 +440,12 @@ void sendImuJson(float roll, float pitch, float yaw,
     "\"gx\":%.2f,\"gy\":%.2f,\"gz\":%.2f}\n",
     roll, pitch, yaw, ax, ay, az, gx, gy, gz);
   if (n > 0) {
-    // [removed] IMU 는 더 이상 UART 로 보내지 않음 (Pi 쪽에서 읽지 않았음)
-    udpSend(buf, n);                         // PC로 미러링 (UDP) - 유지
-  }
-}
-
-// 엔코더: UDP로만 (Pi에는 안 보냄 - 나중에 SLAM 붙일 때 추가 가능)
-void sendEncJson(float rpmL, float rpmR, int64_t ticksL, int64_t ticksR) {
-  char buf[200];
-  int n = snprintf(buf, sizeof(buf),
-    "{\"T\":\"enc\",\"rpmL\":%.2f,\"rpmR\":%.2f,"
-    "\"tickL\":%lld,\"tickR\":%lld}\n",
-    rpmL, rpmR, (long long)ticksL, (long long)ticksR);
-  if (n > 0) {
-    udpSend(buf, n);
+    udpSend(buf, n);                         // PC로 미러링 (UDP)
   }
 }
 
 // =============================================================
-//                  I2C / IMU 헬퍼  (변경 없음)
+//                  I2C / IMU 헬퍼
 // =============================================================
 void writeReg(uint8_t addr, uint8_t reg, uint8_t val) {
   Wire.beginTransmission(addr);
@@ -496,12 +582,12 @@ void mahonyUpdate(float gx, float gy, float gz,
   float ex = (ay*vz - az*vy) + (my*wz - mz*wy);
   float ey = (az*vx - ax*vz) + (mz*wx - mx*wz);
   float ez = (ax*vy - ay*vx) + (mx*wy - my*wx);
-  exInt += ex * Ki * halfT;
-  eyInt += ey * Ki * halfT;
-  ezInt += ez * Ki * halfT;
-  gx = gx * DEG_TO_RAD + Kp*ex + exInt;
-  gy = gy * DEG_TO_RAD + Kp*ey + eyInt;
-  gz = gz * DEG_TO_RAD + Kp*ez + ezInt;
+  exInt += ex * AHRS_KI * halfT;
+  eyInt += ey * AHRS_KI * halfT;
+  ezInt += ez * AHRS_KI * halfT;
+  gx = gx * DEG_TO_RAD + AHRS_KP*ex + exInt;
+  gy = gy * DEG_TO_RAD + AHRS_KP*ey + eyInt;
+  gz = gz * DEG_TO_RAD + AHRS_KP*ez + ezInt;
   q0 += (-q1*gx - q2*gy - q3*gz) * halfT;
   q1 += ( q0*gx + q2*gz - q3*gy) * halfT;
   q2 += ( q0*gy - q1*gz + q3*gx) * halfT;
@@ -562,16 +648,18 @@ void setup() {
   setupWiFi();
   setupOTA();
 
-  lastCmdMs = millis();  // 부팅 직후 워치독 오발 방지
+  udpCmd.begin(CMD_PORT);   // 명령 수신 UDP 시작
 
-  dbg("=== UGV ESP32 Boot (JSON {L,R} + ENC + UDP mirror) ===");
+  lastCmdMs = millis();
+
+  dbg("=== UGV ESP32 Boot (velocity PID: target RPM + FF) ===");
   dbg("UART0 (Serial) <-> Pi @ %u baud", UART_BAUD);
   dbg("WiFi: %s, IP: %s",
       wifiConnected ? "STA" : "AP",
       wifiConnected ? WiFi.localIP().toString().c_str()
                     : WiFi.softAPIP().toString().c_str());
-  dbg("Encoder pins: L(A=%d,B=%d) R(A=%d,B=%d), PPR=%.0f",
-      ENC_L_A, ENC_L_B, ENC_R_A, ENC_R_B, PULSES_PER_REV);
+  dbg("FF_GAIN=%.2f VEL_KP=%.2f VEL_KI=%.2f PPR=%.0f",
+      FF_GAIN, VEL_KP, VEL_KI, PULSES_PER_REV);
 
   Wire.begin(S_SDA, S_SCL);
   Wire.setClock(400000);
@@ -593,6 +681,7 @@ void loop() {
   ArduinoOTA.handle();
   if (!otaRunning) {
     handleUart();
+    handleUdpCmd();
   }
   checkWatchdog();
 
@@ -623,7 +712,7 @@ void loop() {
     }
   }
 
-  // ----- IMU 텔레메트리 (50Hz) - UART + UDP -----
+  // ----- IMU 텔레메트리 (50Hz) - UDP only -----
   if (!otaRunning && millis() - lastTelMs >= 20) {
     lastTelMs = millis();
     if (imuReady) {
@@ -633,31 +722,41 @@ void loop() {
     }
   }
 
-  // ----- 엔코더 텔레메트리 (50Hz, 20ms 윈도우 RPM 계산) - UDP only -----
+  // ----- 엔코더 + velocity PID (50Hz) -----
   if (!otaRunning && millis() - lastEncMs >= 20) {
     unsigned long now = millis();
-    float dt = (now - lastEncMs) / 1000.0f;   // 초 단위
+    float dt = (now - lastEncMs) / 1000.0f;
     lastEncMs = now;
 
     int16_t dL = readAndClearPCNT(PCNT_UNIT_L) * ENC_L_DIR;
     int16_t dR = readAndClearPCNT(PCNT_UNIT_R) * ENC_R_DIR;
-
     totalTicksL += dL;
     totalTicksR += dR;
 
-    // RPM = (틱/초) / (틱/회전) * 60
     float rpmL = (dt > 0) ? (dL / dt) / PULSES_PER_REV * 60.0f : 0.0f;
     float rpmR = (dt > 0) ? (dR / dt) / PULSES_PER_REV * 60.0f : 0.0f;
 
-    sendEncJson(rpmL, rpmR, totalTicksL, totalTicksR);
+    velocityControlUpdate(rpmL, rpmR, dt);
+
+    // PC 로깅/튜닝용 odo 텔레메트리 (50Hz, JSON, UDP 4212)
+    char odo[160];
+    int on = snprintf(odo, sizeof(odo),
+      "{\"T\":\"odo\",\"tl\":%.1f,\"tr\":%.1f,\"rl\":%.1f,\"rr\":%.1f,"
+      "\"pl\":%d,\"pr\":%d,\"kp\":%.2f,\"ki\":%.2f}\n",
+      velMode ? targetRpmL : 0.0f, velMode ? targetRpmR : 0.0f,
+      rpmL, rpmR, currentLeft, currentRight, VEL_KP, VEL_KI);
+    if (on > 0) {
+      udpSend(odo, on);    // 기존: PC 디버깅용 유지
+      Serial.print(odo);   // 추가: 라즈파이 UART 전송
+    }
   }
 
   // ----- 하트비트 -----
   static unsigned long lastBeat = 0;
   if (millis() - lastBeat > 10000) {
     lastBeat = millis();
-    dbg("[alive] L=%d R=%d ip=%s",
-        currentLeft, currentRight,
+    dbg("[alive] mode=%s L=%d R=%d ip=%s",
+        velMode ? "VEL" : "PWM", currentLeft, currentRight,
         wifiConnected ? WiFi.localIP().toString().c_str() : WiFi.softAPIP().toString().c_str());
   }
   delay(1);
