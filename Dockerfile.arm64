@@ -10,11 +10,13 @@ ENV TZ=Asia/Seoul
 ENV ROS_DOMAIN_ID=42
 ENV RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
 
+# 기본 유틸리티 및 빌드 도구 설치
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential cmake git wget curl vim nano tmux \
     net-tools iputils-ping sudo \
     && rm -rf /var/lib/apt/lists/*
 
+# ROS2 필수 의존성, SLAM, Navigation2 패키지 일괄 설치
 RUN apt-get update && apt-get install -y --no-install-recommends \
     python3-pip \
     python3-colcon-common-extensions \
@@ -28,9 +30,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     ros-jazzy-rosbridge-suite \
     ros-jazzy-rmw-cyclonedds-cpp \
     ros-jazzy-teleop-twist-keyboard \
+    ros-jazzy-slam-toolbox \
+    ros-jazzy-navigation2 \
+    ros-jazzy-nav2-bringup \
     v4l-utils \
     && rm -rf /var/lib/apt/lists/*
 
+# Python 패키지 설치 (break-system-packages 허용)
 RUN pip3 install --no-cache-dir --break-system-packages --ignore-installed \
     "setuptools==68.2.2" \
     "numpy<2" \
@@ -38,12 +44,14 @@ RUN pip3 install --no-cache-dir --break-system-packages --ignore-installed \
     pyserial \
     ncnn
 
+# 사용자 권한 설정 및 작업 공간 생성
 RUN echo "ubuntu ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/ubuntu \
     && chmod 0440 /etc/sudoers.d/ubuntu \
     && usermod -aG dialout ubuntu \
     && mkdir -p /ros2_ws \
     && chown -R ubuntu:ubuntu /ros2_ws
 
+# ubuntu 계정 .bashrc 환경 변수 자동 등록
 RUN echo "source /opt/ros/jazzy/setup.bash" >> /home/ubuntu/.bashrc \
     && echo "[ -f /ros2_ws/install/setup.bash ] && source /ros2_ws/install/setup.bash" >> /home/ubuntu/.bashrc \
     && echo "export ROS_DOMAIN_ID=42" >> /home/ubuntu/.bashrc \
