@@ -28,6 +28,10 @@ const uint16_t DEBUG_PORT = 4212;
 WiFiUDP udpDebug;
 IPAddress broadcastIP(192, 168, 0, 255);
 
+// 키보드 텔레옵 명령 수신 UDP (파이썬 스크립트가 한 글자씩 전송)
+const uint16_t CMD_PORT = 4211;
+WiFiUDP udpCmd;
+
 // =============================================================
 //                  모터 (TB6612FNG) 핀
 // =============================================================
@@ -46,6 +50,12 @@ IPAddress broadcastIP(192, 168, 0, 255);
 // 모터 PWM 한계값
 const int MAX_PWM = 230;
 const int MIN_PWM = 50;
+
+// 텔레옵(UDP 키보드) 모터 속도 (실측 후 조정)
+const int TELE_FWD      = 150;   // 직진
+const int TELE_TURN_OUT = 150;   // 완만 회전: 바깥쪽 바퀴
+const int TELE_TURN_IN  = 80;    // 완만 회전: 안쪽 바퀴
+const int TELE_PIVOT    = 120;   // 제자리 회전
 
 // 워치독: 마지막 명령 후 이 시간 지나면 자동 정지
 const unsigned long CMD_TIMEOUT_MS = 500;
@@ -69,7 +79,7 @@ const float PULSES_PER_REV = 1320.0f;
 
 // 좌/우 방향 부호 (방향 반대로 나오면 -1로 뒤집기)
 const int8_t ENC_L_DIR = 1;
-const int8_t ENC_R_DIR = 1;
+const int8_t ENC_R_DIR = -1;
 
 // 누적 틱 (PCNT 16bit overflow 보정용)
 int64_t totalTicksL = 0;
@@ -260,6 +270,91 @@ int16_t readAndClearPCNT(pcnt_unit_t unit) {
   pcnt_counter_clear(unit);
   return count;
 }
+// =============================================================
+//                  오도메트리 (차동 구동)
+// =============================================================
+const float WHEEL_RADIUS = 0.034f;   // m (바퀴 반지름)
+const float WHEEL_BASE   = 0.25f;    // m (좌우 바퀴 간격)
+
+// 펄스 1개당 바퀴 이동거리 = (1/PPR) * 2πR
+const float DIST_PER_TICK = (2.0f * PI * WHEEL_RADIUS) / PULSES_PER_REV;
+
+double odomX  = 0.0;    // m
+double odomY  = 0.0;    // m
+double odomTh = 0.0;    // rad
+float  odomVx = 0.0f;   // m/s
+float  odomWz = 0.0f;   // rad/s
+
+void updateOdometry(int16_t dL, int16_t dR, float dt) {
+  float distL = dL * DIST_PER_TICK;
+  float distR = dR * DIST_PER_TICK;
+
+  float dCenter = (distL + distR) * 0.5f;        // 중심 이동거리
+  float dTheta  = (distR - distL) / WHEEL_BASE;  // 회전각 (좌회전 +)
+
+  float midTh = odomTh + dTheta * 0.5f;          // 중간각 적분
+  odomX  += dCenter * cosf(midTh);
+  odomY  += dCenter * sinf(midTh);
+  odomTh += dTheta;
+
+  if (odomTh >  PI) odomTh -= 2.0f * PI;          // -π~π 정규화
+  if (odomTh < -PI) odomTh += 2.0f * PI;
+
+  odomVx = (dt > 0) ? dCenter / dt : 0.0f;
+  odomWz = (dt > 0) ? dTheta  / dt : 0.0f;
+}
+
+void sendOdomJson() {
+  char buf[160];
+  int n = snprintf(buf, sizeof(buf),
+    "{\"T\":\"odom\",\"x\":%.4f,\"y\":%.4f,\"th\":%.4f,\"vx\":%.3f,\"wz\":%.3f}",
+    odomX, odomY, odomTh, odomVx, odomWz);
+  if (n > 0) Serial.println(buf);   // UART -> Pi bridge_node (\n 포함)
+}
+
+// =============================================================
+//                  바퀴 속도 PID (ESP32 로컬 제어)
+//   fsm 이 보내는 base PWM(L,R)을 목표로 받고, 엔코더로 잰 좌우 속도차를
+//   0으로 맞추는 동기화 PID. (Pi control_node 를 펌웨어로 이식, 게인 동일)
+//   직진(L≈R): 속도차 보정 / 회전(|L-R| 큼): PID 우회하고 목표 그대로 적용
+// =============================================================
+const float PID_KP = 1.8f;
+const float PID_KI = 0.1f;        // KD=0 (튜닝상 D는 노이즈만 키워 제외)
+const int   TURN_THRESHOLD = 15;  // |targetL-targetR| 초과 시 회전으로 보고 PID 우회
+const float CORR_LIMIT     = 60.0f; // 보정 한계(한쪽 ±30). base80-30=50=MIN_PWM 유지
+const float I_LIMIT        = 100.0f;
+
+int16_t targetL = 0;      // 목표(base) PWM
+int16_t targetR = 0;
+float   pidIntegral = 0.0f;
+
+void setTarget(int16_t l, int16_t r) {
+  targetL = l; targetR = r;
+  lastCmdMs = millis();   // 워치독 리셋
+}
+void resetPid() { pidIntegral = 0.0f; }
+
+void velocityControlUpdate(float rpmL, float rpmR, float dt) {
+  if (targetL == 0 && targetR == 0) {        // 정지
+    resetPid(); applyPwm(0, 0); return;
+  }
+  if (abs(targetL - targetR) > TURN_THRESHOLD) {  // 회전 -> PID 우회
+    resetPid(); applyPwm(targetL, targetR); return;
+  }
+  // 직진 동기화: (rpmL - rpmR) -> 0
+  float err = rpmL - rpmR;
+  pidIntegral += err * dt;
+  if (pidIntegral >  I_LIMIT) pidIntegral =  I_LIMIT;
+  if (pidIntegral < -I_LIMIT) pidIntegral = -I_LIMIT;
+
+  float corr = PID_KP * err + PID_KI * pidIntegral;
+  if (corr >  CORR_LIMIT) corr =  CORR_LIMIT;
+  if (corr < -CORR_LIMIT) corr = -CORR_LIMIT;
+
+  // 왼쪽이 빠르면 corr>0 -> 왼쪽 줄이고 오른쪽 키움. 평균(속도)은 유지.
+  applyPwm(targetL - (int16_t)(corr / 2.0f),
+           targetR + (int16_t)(corr / 2.0f));
+}
 
 // =============================================================
 //                  JSON 명령 처리
@@ -277,17 +372,16 @@ void processCommand(const char* json_line) {
   if (strcmp(type, "m") == 0) {
     int l = doc["L"] | 0;
     int r = doc["R"] | 0;
-    applyPwm(l, r);
-    lastCmdMs = millis();
-    dbg("[cmd m] L=%d R=%d", l, r);
+    setTarget(l, r);                 // PID 루프가 실제 PWM 계산
+    dbg("[cmd m] target L=%d R=%d", l, r);
   }
   else if (strcmp(type, "e") == 0) {
+    setTarget(0, 0); resetPid();
     motorStop();
-    currentLeft  = 0;
-    currentRight = 0;
-    lastCmdMs = millis();
+    currentLeft = 0; currentRight = 0;
     dbg("[cmd e] emergency stop");
   }
+
   else if (strcmp(type, "ping") == 0) {
     Serial.println("{\"T\":\"pong\"}");
     lastCmdMs = millis();
@@ -317,20 +411,54 @@ void handleUart() {
   }
 }
 
+// =============================================================
+//                  UDP 텔레옵 명령 처리 (키보드 조종)
+//   파이썬 키보드 스크립트가 UDP CMD_PORT 로 한 글자씩 전송:
+//     W=직진  S=정지  A=좌(완만)  D=우(완만)
+//     Q=제자리좌  E=제자리우  X=비상정지
+// =============================================================
+void processTeleopChar(char c) {
+  switch (c) {
+    case 'W': case 'w': setTarget(TELE_FWD,  TELE_FWD);          break;
+    case 'S': case 's': setTarget(0, 0);                          break;
+    case 'A': case 'a': setTarget(TELE_TURN_IN,  TELE_TURN_OUT); break;
+    case 'D': case 'd': setTarget(TELE_TURN_OUT, TELE_TURN_IN);  break;
+    case 'Q': case 'q': setTarget(-TELE_PIVOT, TELE_PIVOT);      break;
+    case 'E': case 'e': setTarget(TELE_PIVOT, -TELE_PIVOT);      break;
+    case 'X': case 'x': setTarget(0, 0); resetPid(); motorStop();
+                        currentLeft = 0; currentRight = 0;       break;
+    default: return;
+  }
+}
+
+void handleUdpCmd() {
+  int packetSize = udpCmd.parsePacket();
+  if (packetSize <= 0) return;
+
+  char buf[32];
+  int len = udpCmd.read(buf, sizeof(buf) - 1);
+  if (len <= 0) return;
+  buf[len] = '\0';
+
+  // 한 글자 명령만 사용 (첫 글자)
+  processTeleopChar(buf[0]);
+  dbg("[udp cmd] %c -> L=%d R=%d", buf[0], currentLeft, currentRight);
+}
+
 void checkWatchdog() {
-  bool moving = (currentLeft != 0) || (currentRight != 0);
+  bool moving = (targetL != 0) || (targetR != 0);
   if (moving && (millis() - lastCmdMs > CMD_TIMEOUT_MS)) {
     dbg("[watchdog] timeout -> STOP");
+    targetL = 0; targetR = 0; resetPid();
     motorStop();
-    currentLeft  = 0;
-    currentRight = 0;
+    currentLeft = 0; currentRight = 0;
   }
 }
 
 // =============================================================
 //                  텔레메트리 송신
 // =============================================================
-// IMU: Serial(Pi)로 보내고 UDP로도 미러링
+// IMU: UDP 로만 송신 (UART 전송 제거 - Pi 는 IMU 를 쓰지 않음)
 void sendImuJson(float roll, float pitch, float yaw,
                  float ax, float ay, float az,
                  float gx, float gy, float gz) {
@@ -341,20 +469,8 @@ void sendImuJson(float roll, float pitch, float yaw,
     "\"gx\":%.2f,\"gy\":%.2f,\"gz\":%.2f}\n",
     roll, pitch, yaw, ax, ay, az, gx, gy, gz);
   if (n > 0) {
-    Serial.write((const uint8_t*)buf, n);   // Pi로 (UART)
-    udpSend(buf, n);                         // PC로 미러링 (UDP)
-  }
-}
-
-// 엔코더: UDP로만 (Pi에는 안 보냄 - 나중에 SLAM 붙일 때 추가 가능)
-void sendEncJson(float rpmL, float rpmR, int64_t ticksL, int64_t ticksR) {
-  char buf[200];
-  int n = snprintf(buf, sizeof(buf),
-    "{\"T\":\"enc\",\"rpmL\":%.2f,\"rpmR\":%.2f,"
-    "\"tickL\":%lld,\"tickR\":%lld}\n",
-    rpmL, rpmR, (long long)ticksL, (long long)ticksR);
-  if (n > 0) {
-    udpSend(buf, n);
+    // [removed] IMU 는 더 이상 UART 로 보내지 않음 (Pi 쪽에서 읽지 않았음)
+    udpSend(buf, n);                         // PC로 미러링 (UDP) - 유지
   }
 }
 
@@ -562,6 +678,8 @@ void setup() {
   setupWiFi();
   setupOTA();
 
+  udpCmd.begin(CMD_PORT);   // 키보드 텔레옵 UDP 명령 수신 시작
+
   lastCmdMs = millis();  // 부팅 직후 워치독 오발 방지
 
   dbg("=== UGV ESP32 Boot (JSON {L,R} + ENC + UDP mirror) ===");
@@ -593,6 +711,7 @@ void loop() {
   ArduinoOTA.handle();
   if (!otaRunning) {
     handleUart();
+    handleUdpCmd();
   }
   checkWatchdog();
 
@@ -623,7 +742,7 @@ void loop() {
     }
   }
 
-  // ----- IMU 텔레메트리 (50Hz) - UART + UDP -----
+  // ----- IMU 텔레메트리 (50Hz) - UDP only -----
   if (!otaRunning && millis() - lastTelMs >= 20) {
     lastTelMs = millis();
     if (imuReady) {
@@ -633,23 +752,40 @@ void loop() {
     }
   }
 
-  // ----- 엔코더 텔레메트리 (50Hz, 20ms 윈도우 RPM 계산) - UDP only -----
+// ----- 엔코더 + 로컬 속도 PID (50Hz) -----
   if (!otaRunning && millis() - lastEncMs >= 20) {
     unsigned long now = millis();
-    float dt = (now - lastEncMs) / 1000.0f;   // 초 단위
+    float dt = (now - lastEncMs) / 1000.0f;
     lastEncMs = now;
 
     int16_t dL = readAndClearPCNT(PCNT_UNIT_L) * ENC_L_DIR;
     int16_t dR = readAndClearPCNT(PCNT_UNIT_R) * ENC_R_DIR;
-
     totalTicksL += dL;
     totalTicksR += dR;
 
-    // RPM = (틱/초) / (틱/회전) * 60
     float rpmL = (dt > 0) ? (dL / dt) / PULSES_PER_REV * 60.0f : 0.0f;
     float rpmR = (dt > 0) ? (dR / dt) / PULSES_PER_REV * 60.0f : 0.0f;
 
-    sendEncJson(rpmL, rpmR, totalTicksL, totalTicksR);
+    // 엔코더는 여기서만 사용 (UART 로 안 올림)
+    velocityControlUpdate(rpmL, rpmR, dt);
+
+
+    // ----- 오도메트리 적분 (50Hz) -----
+    updateOdometry(dL, dR, dt);
+
+    // ----- odom UART 송신 (10Hz) -----
+    static unsigned long lastOdomMs = 0;
+    if (millis() - lastOdomMs >= 100) {
+      lastOdomMs = millis();
+      sendOdomJson();
+    }
+
+    // 모니터링용 저전송 UDP 디버그 (UART 부하 없음, 500ms 마다)
+    static unsigned long lastEncDbg = 0;
+    if (millis() - lastEncDbg > 500) {
+      lastEncDbg = millis();
+      dbg("[enc] rpmL=%.1f rpmR=%.1f L=%d R=%d", rpmL, rpmR, currentLeft, currentRight);
+    }
   }
 
   // ----- 하트비트 -----
