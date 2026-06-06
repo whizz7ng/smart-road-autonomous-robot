@@ -2,17 +2,21 @@
 """
 control_node: /fsm_cmd (JSON String) -> /cmd_vel (geometry_msgs/Twist)
 
-  PID / 바퀴 동기화는 ESP32 펌웨어 담당. 여기선 고수준 명령 -> 속도 목표 변환만.
+  PID / 바퀴 동기화는 ESP32 펌웨어가 담당.
+  이 노드는 fsm 의 고수준 명령을 속도 목표로 변환만 한다.
 
   /fsm_cmd 포맷:
-    {"cmd":"forward"/"stop", "angular_z":<rad/s>, "speed_scale":0~1, ...}
+    {"cmd": "forward"/"stop", "angular_z": <rad/s>, "lane": {...}, "objects": {...}}
 
-    cmd=="forward" -> linear.x = forward_speed * speed_scale, angular.z = angular_z
-    cmd=="stop"    -> 0, 0
+    cmd == "forward" -> linear.x = forward_speed, angular.z = angular_z(차선 조향)
+    cmd == "stop"    -> 0, 0
     (파싱 실패/알 수 없는 cmd -> 안전 정지)
 
   cmd_vel 은 publish_rate(20Hz) 로 계속 발행
-  -> bridge_node(10Hz 재송신, 0.5s stale) / ESP32 워치독(500ms) 유지.
+  -> bridge_node(10Hz 재송신, 0.5s stale 정지) / ESP32 워치독(500ms) 유지.
+
+속도 환산 참고 (bridge twist_to_wheel_rpm 기준):
+  forward_speed=0.12 m/s -> 약 35 RPM
 """
 
 import json
@@ -30,15 +34,17 @@ class ControlNode(Node):
     def __init__(self):
         super().__init__("control_node")
 
-        self.declare_parameter("forward_speed", 0.26)   # m/s (~35 RPM)
-        self.declare_parameter("publish_rate", 20.0)
+        # ----- 파라미터 -----
+        self.declare_parameter("forward_speed", 0.20)   # m/s (~35 RPM)
+        self.declare_parameter("publish_rate", 20.0)    # Hz
         self.forward_speed = float(self.get_parameter("forward_speed").value)
         rate = float(self.get_parameter("publish_rate").value)
 
+        # 시작은 안전상 정지
         self.current_cmd = "stop"
         self.angular_z = 0.0
-        self.speed_scale = 0.0
 
+        # ----- pub/sub -----
         self.create_subscription(String, "fsm_cmd", self.cmd_cb, 10)
         self.cmd_vel_pub = self.create_publisher(Twist, "cmd_vel", 10)
         self.create_timer(1.0 / rate, self.publish_cmd_vel)
@@ -50,25 +56,23 @@ class ControlNode(Node):
         try:
             d = json.loads(msg.data)
         except (json.JSONDecodeError, TypeError):
-            self.get_logger().warn("fsm_cmd JSON parse 실패 -> 정지")
-            self.current_cmd, self.angular_z, self.speed_scale = "stop", 0.0, 0.0
+            self.get_logger().warn("fsm_cmd JSON parse 실패 -> 정지 유지")
+            self.current_cmd = "stop"
+            self.angular_z = 0.0
             return
+
         self.current_cmd = str(d.get("cmd", "stop")).strip().lower()
         try:
             self.angular_z = float(d.get("angular_z", 0.0))
         except (TypeError, ValueError):
             self.angular_z = 0.0
-        try:
-            self.speed_scale = max(0.0, min(1.0, float(d.get("speed_scale", 1.0))))
-        except (TypeError, ValueError):
-            self.speed_scale = 1.0
 
     def publish_cmd_vel(self):
         tw = Twist()
         if self.current_cmd == CMD_FORWARD:
-            tw.linear.x = self.forward_speed * self.speed_scale
+            tw.linear.x = self.forward_speed
             tw.angular.z = self.angular_z
-        else:
+        else:  # stop / unknown -> 안전 정지
             tw.linear.x = 0.0
             tw.angular.z = 0.0
         self.cmd_vel_pub.publish(tw)
