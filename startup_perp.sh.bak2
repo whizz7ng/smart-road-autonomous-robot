@@ -24,7 +24,7 @@ docker run -d \
     -e DISPLAY=$DISPLAY \
     -e ROS_DOMAIN_ID=42 \
     -e RMW_IMPLEMENTATION=rmw_cyclonedds_cpp \
-    -e CYCLONEDDS_URI='<CycloneDDS><Domain><General><Interfaces><NetworkInterface name="wlan0"/></Interfaces><AllowMulticast>false</AllowMulticast></General><Discovery><ParticipantIndex>auto</ParticipantIndex><MaxAutoParticipantIndex>50</MaxAutoParticipantIndex><Peers><Peer Address="192.168.0.142"/><Peer Address="192.168.0.139"/><Peer Address="192.168.0.234"/><Peer Address="192.168.0.217"/></Peers></Discovery></Domain></CycloneDDS>' \
+    -e CYCLONEDDS_URI='<CycloneDDS><Domain><General><Interfaces><NetworkInterface name="wlan0"/></Interfaces><AllowMulticast>false</AllowMulticast></General><Discovery><ParticipantIndex>auto</ParticipantIndex><MaxAutoParticipantIndex>10</MaxAutoParticipantIndex><Peers><Peer Address="192.168.0.142"/><Peer Address="192.168.0.139"/><Peer Address="192.168.0.234"/><Peer Address="192.168.0.217"/></Peers></Discovery></Domain></CycloneDDS>' \
     -v /tmp/.X11-unix:/tmp/.X11-unix \
     -v $WS_PATH:/ros2_ws \
     --device=/dev/video0:/dev/video0 \
@@ -55,42 +55,6 @@ docker exec -d $CONTAINER_NAME bash -c \
      ros2 run perception camera_node \
      > /tmp/perception.log 2>&1"
 sleep 8
-log "시리얼 디바이스 권한 설정..."
-docker exec -u root $CONTAINER_NAME bash -c \
-    "chmod 777 /dev/ttyAMA0 /dev/ttyUSB0 2>/dev/null"
-
-log "serial bridge 시작 중..."
-docker exec -d $CONTAINER_NAME bash -c \
-    "source $ROS_SETUP && source $WS_SETUP && \
-     ROS_DOMAIN_ID=42 RMW_IMPLEMENTATION=rmw_cyclonedds_cpp \
-     ros2 run serial_bridge bridge_node \
-     > /tmp/bridge.log 2>&1"
-sleep 5
-
-log "lidar 시작 중..."
-docker exec -d $CONTAINER_NAME bash -c \
-    "{ source $ROS_SETUP && source $WS_SETUP && \
-     PYTHONUNBUFFERED=1 ROS_DOMAIN_ID=42 RMW_IMPLEMENTATION=rmw_cyclonedds_cpp \
-     ros2 launch ldlidar_stl_ros2 ld19.launch.py ;} > /tmp/lidar.log 2>&1"
-sleep 10
-
-
-#log "localization (AMCL+map_server) 시작 중..."
-#docker exec -d $CONTAINER_NAME bash -c \
-#    "source $ROS_SETUP && source $WS_SETUP && \
-#     ROS_DOMAIN_ID=42 RMW_IMPLEMENTATION=rmw_cyclonedds_cpp \
-#     ros2 launch localization localization.launch.py \
-#     > /tmp/localization.log 2>&1"
-#sleep 8
-#log "path_follower 시작 중..."
-#docker exec -d $CONTAINER_NAME bash -c \
-#    "source $ROS_SETUP && source $WS_SETUP && \
-#     ROS_DOMAIN_ID=42 RMW_IMPLEMENTATION=rmw_cyclonedds_cpp \
-#     WAYPOINTS_PATH=/ros2_ws/src/localization/maps/waypoints.yaml \
-#     ros2 run track_overlay path_follower \
-#     > /tmp/path_follower.log 2>&1"
-#sleep 3
-
 
 log "────────────────────────────────────────"
 log "모든 서비스 시작 완료!"

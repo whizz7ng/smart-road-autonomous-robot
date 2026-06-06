@@ -35,9 +35,9 @@ def generate_launch_description():
         {'port_name': '/dev/ttyUSB0'},
         {'port_baudrate': 230400},
         {'laser_scan_dir': True},
-        {'enable_angle_crop_func': False},
-        {'angle_crop_min': 135.0},
-        {'angle_crop_max': 225.0}
+        {'enable_angle_crop_func': True},
+        {'angle_crop_min': 180.0},
+        {'angle_crop_max': 360.0}
       ]
   )
 
@@ -46,7 +46,7 @@ def generate_launch_description():
     package='tf2_ros',
     executable='static_transform_publisher',
     name='base_link_to_base_laser_ld19',
-    arguments=['0','0','0.125','0','0','0','base_link','base_laser']
+    arguments=['0','0','0.125','1.5708','0','0','base_link','base_laser']
   )
 
 
