@@ -10,15 +10,18 @@ from geometry_msgs.msg import Point
 from std_msgs.msg import ColorRGBA
 from tf2_ros import Buffer, TransformListener, LookupException, ExtrapolationException, ConnectivityException
 
-ROI_FWD_MIN = 0.0
+ROI_FWD_MIN = 0.10
 ROI_FWD_MAX = 1.0
-ROI_SIDE_MIN = -0.5
-ROI_SIDE_MAX = 0.5
+ROI_SIDE_MIN = -0.33
+ROI_SIDE_MAX = 0.33
 ROI_MIN_POINTS = 3
 
 GRID_SIZE = 0.15          # map 격자 크기(m)
 STATIC_WINDOW = 5         # 최근 N프레임
 STATIC_HITS = 4           # N프레임 중 M번 이상 점유 = 정적
+
+DYNAMIC_MIN_CELLS = 2     # 동적 판정 최소 동적 셀 수 (가장자리 1셀 깜빡임 무시)
+DYNAMIC_HOLD = 8          # 켜진 뒤 유지 프레임 (~0.8s @10Hz)
 
 class RoiTest(Node):
     def __init__(self):
@@ -34,11 +37,12 @@ class RoiTest(Node):
         self.prev_occupied = set()    # 직전 프레임 점유 격자
         self.last_dynamic = False     # FSM 전달용 결과
         self.get_logger().info('roi_test (map frame) ready')
+        self.dyn_hold = 0
 
     def _get_tf(self):
         try:
             return self.tf_buffer.lookup_transform(
-                'map', 'base_laser', rclpy.time.Time(),
+                'odom', 'base_laser', rclpy.time.Time(),
                 timeout=Duration(seconds=0.1))
         except (LookupException, ExtrapolationException, ConnectivityException):
             return None
@@ -73,6 +77,9 @@ class RoiTest(Node):
         new_streak = {}
         for cell in occupied:
             new_streak[cell] = self.streak.get(cell, 0) + 1
+        for cell, n in self.streak.items():
+            if cell not in occupied and n - 1 > 0:
+                new_streak[cell] = n - 1   # 안 보인 칸: 리셋 대신 1 감쇠
         self.streak = new_streak
 
         # 정적 칸: 연속 STATIC_HITS 이상 점유
@@ -86,8 +93,15 @@ class RoiTest(Node):
 
         # 상태 갱신
         self.prev_occupied = occupied
-        self.last_dynamic = len(dynamic_cells) > 0
-        return self.last_dynamic, len(dynamic_cells), len(static_cells)
+        n_dyn = len(dynamic_cells)
+        if n_dyn >= DYNAMIC_MIN_CELLS:
+            self.dyn_hold = DYNAMIC_HOLD          # 강한 증거 -> 유지 풀충전
+        elif n_dyn >= 1 and self.dyn_hold > 0:
+            self.dyn_hold = DYNAMIC_HOLD          # 동적 진행 중 약한 증거 -> 연장
+        elif self.dyn_hold > 0:
+            self.dyn_hold -= 1                    # 증거 없음 -> 감쇠
+        self.last_dynamic = self.dyn_hold > 0
+        return self.last_dynamic, n_dyn, len(static_cells)
 
     def cb(self, scan):
         self.publish_box()
