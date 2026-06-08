@@ -1,4 +1,3 @@
-
 #!/usr/bin/env python3
 """
 fsm_node: /robot_perception (JSON) -> 주행 상태 결정 + 차선 조향 -> /fsm_cmd (JSON String)
@@ -35,6 +34,10 @@ from rclpy.node import Node
 from std_msgs.msg import String, Int32
 from collections import deque, Counter
 
+from sensor_msgs.msg import LaserScan
+from rclpy.qos import qos_profile_sensor_data
+from track_overlay.obstacle_checker import ObstacleChecker, ObstacleResult
+
 
 # 주행 상태
 STATE_DRIVING     = "DRIVING"
@@ -42,13 +45,10 @@ STATE_STOPPED     = "STOPPED"
 STATE_LANE_CHANGE = "LANE_CHANGE"
 
 # 차선 변경 sub-phase
-LC_PHASE_PRE_STOP   = "PRE_STOP"     # 시작 전
+LC_PHASE_PRE_STOP   = "PRE_STOP"
 LC_PHASE_ROTATE_OUT = "ROTATE_OUT"
-LC_PHASE_STOP1      = "STOP1"        # 회전 후
 LC_PHASE_STRAIGHT   = "STRAIGHT"
-LC_PHASE_STOP2      = "STOP2"        # 직진 후
 LC_PHASE_ROTATE_IN  = "ROTATE_IN"
-LC_PHASE_STOP3      = "STOP3"        # 반대회전 후(복귀 전 안정)
 
 LT_PHASE_PRE_STOP = "LT_PRE_STOP"
 LT_PHASE_STRAIGHT = "LT_STRAIGHT"
@@ -104,7 +104,7 @@ class FsmNode(Node):
         super().__init__("fsm_node")
 
         # ----- 튜닝 파라미터 -----
-        #self.declare_parameter("true_thresh", 6)
+        self.declare_parameter("true_thresh", 6)
         self.declare_parameter("false_thresh", 3)
         self.declare_parameter("stop_hold_sec", 2.5)
         self.declare_parameter("cooldown_sec", 2.0)
@@ -116,16 +116,15 @@ class FsmNode(Node):
         self.declare_parameter("steer_max", 0.6)         # rad/s clamp
         self.declare_parameter("steer_deadband_cm", 0.5)
         # 차선 변경 (오픈 루프)
-        self.declare_parameter("lane_change_rotate_az",  1.6)   # rad/s, 회전 각속도 크기 (>0)
-        self.declare_parameter("lane_change_rotate_sec", 0.7)   # s, 한 번 회전 지속
-        self.declare_parameter("lane_change_straight_dist_m", 0.34)  # m
+        self.declare_parameter("lane_change_rotate_az",  1.58)   # rad/s, 회전 각속도 크기 (>0)
+        self.declare_parameter("lane_change_rotate_sec", 1.0)   # s, 한 번 회전 지속
+        self.declare_parameter("lane_change_straight_dist_m", 0.40)  # m
         self.declare_parameter("lane_change_straight_speed",   0.23) # m/s, control_node forward_speed 와 맞춰라
         self.declare_parameter("lane_number_window", 20)     # 최근 N개 샘플
         self.declare_parameter("lane_number_min_samples", 14) # 결정에 필요한 최소 표 수
-        self.declare_parameter("lane_change_mid_stop_sec", 0.6)
         
         self.declare_parameter("avoid_class", "construction")
-        self.declare_parameter("avoid_dist_cm", 65.0)
+        self.declare_parameter("avoid_dist_cm", 60.0)
         self.declare_parameter("avoid_cooldown_sec", 8.0)
 
         # 표지판 트리거
@@ -156,9 +155,11 @@ class FsmNode(Node):
         self.declare_parameter("pre_maneuver_stop_sec", 0.3)
         self.declare_parameter("left_turn_window", 7)    # 최근 N프레임
         self.declare_parameter("left_turn_confirm", 4)   # 그중 임계 이상이 M번
+        
+        self.declare_parameter("obstacle_clear_frames", 5)        # 정지 해제: 연속 N프레임 비워야 재개
 
         
-        #self.TRUE_THRESH   = int(self.get_parameter("true_thresh").value)
+        self.TRUE_THRESH   = int(self.get_parameter("true_thresh").value)
         self.FALSE_THRESH  = int(self.get_parameter("false_thresh").value)
         self.STOP_HOLD_SEC = float(self.get_parameter("stop_hold_sec").value)
         self.COOLDOWN_SEC  = float(self.get_parameter("cooldown_sec").value)
@@ -171,13 +172,12 @@ class FsmNode(Node):
         self.STEER_MAX     = float(self.get_parameter("steer_max").value)
         self.STEER_DEADBAND_CM = float(self.get_parameter("steer_deadband_cm").value)
 
-        self.LC_ROT_AZ        = abs(float(self.get_parameter("lane_change_rotate_az").value))
+        self.LC_ROT_AZ        = -abs(float(self.get_parameter("lane_change_rotate_az").value))
         self.LC_ROT_SEC       = float(self.get_parameter("lane_change_rotate_sec").value)
         self.LC_STRAIGHT_DIST = float(self.get_parameter("lane_change_straight_dist_m").value)
         self.LC_STRAIGHT_SPD  = float(self.get_parameter("lane_change_straight_speed").value)
         self.LC_STRAIGHT_SEC  = (self.LC_STRAIGHT_DIST / self.LC_STRAIGHT_SPD
                                  if self.LC_STRAIGHT_SPD > 0 else 0.0)
-        self.LC_MID_STOP_SEC = float(self.get_parameter("lane_change_mid_stop_sec").value)
         
         self.PRE_STOP_SEC = float(self.get_parameter("pre_maneuver_stop_sec").value)
         
@@ -220,6 +220,8 @@ class FsmNode(Node):
         self.LT_TRIGGER_WINDOW  = int(self.get_parameter("left_turn_window").value)
         self.LT_TRIGGER_CONFIRM = int(self.get_parameter("left_turn_confirm").value)
         
+        self.OBS_CLEAR_FRAMES   = int(self.get_parameter("obstacle_clear_frames").value)
+                
         # ----- FSM 상태 -----
         self.state = STATE_DRIVING
         self.stop_enter_time = 0.0
@@ -259,12 +261,20 @@ class FsmNode(Node):
         self.latest_lane = {"offset_px": None, "offset_cm": None,
                             "angular_z": 0.0, "state": None,
                             "number_raw": None, "number_trusted": None}
+        
+        self.checker = ObstacleChecker(self)
+        self.latest_obstacle = ObstacleResult(False, False, 0, False)
+        self.obs_block = False          # 장애물 정지 래치
+        self.obs_clear_count = 0        # 해제용 빈 프레임 카운트
 
         # ----- pub/sub -----
         self.create_subscription(
             String, "robot_perception", self.perception_cb, 10)
         self.create_subscription(
             Int32, "target_lane", self.target_lane_cb, 10)
+        self.create_subscription(
+            LaserScan, "scan", self.scan_cb, qos_profile_sensor_data)
+        
         self.cmd_pub = self.create_publisher(String, "fsm_cmd", 10)
 
         self.create_timer(1.0 / rate, self.tick)
@@ -305,8 +315,8 @@ class FsmNode(Node):
         self.latest_objects = self.enrich_with_distance(yolo)
 
         cv = data.get("opencv", {}) or {}
-        #is_stop_line = bool(cv.get("is_stop_line", False))
-        #self.update_stop_line(is_stop_line)
+        is_stop_line = bool(cv.get("is_stop_line", False))
+        self.update_stop_line(is_stop_line)
         ln_raw = cv.get("lane_number")
         try:
             ln_i = int(ln_raw) if ln_raw is not None else None
@@ -327,6 +337,20 @@ class FsmNode(Node):
         self.maybe_trigger_left_turn()
         self.maybe_trigger_slow()
         self.maybe_trigger_stop_sign()
+        
+    def scan_cb(self, scan: LaserScan):
+        res = self.checker.update(scan)
+        self.latest_obstacle = res
+
+        # 동적 장애물만 정지 래치. 정적/환경은 무시. 해제는 N프레임 비워야.
+        if res.dynamic:
+            self.obs_clear_count = 0
+            self.obs_block = True
+        elif self.obs_block:
+            self.obs_clear_count += 1
+            if self.obs_clear_count >= self.OBS_CLEAR_FRAMES:
+                self.obs_block = False
+
 
     def enrich_with_distance(self, yolo: dict) -> dict:
         out = {}
@@ -366,7 +390,6 @@ class FsmNode(Node):
         return off_cm, az
 
     # ===== 정지선 디바운스 =====
-    '''
     def update_stop_line(self, is_stop_line: bool):
         if self.state != STATE_DRIVING:   # STOPPED / LANE_CHANGE 중엔 무시
             return
@@ -388,7 +411,7 @@ class FsmNode(Node):
                 self.false_count += 1
                 if self.false_count >= self.FALSE_THRESH:
                     self.enter_stopped("stop_line")
-    '''
+
     # ===== 상태 전이 =====
     def enter_stopped(self, reason: str):
         self.state = STATE_STOPPED
@@ -638,20 +661,14 @@ class FsmNode(Node):
             if self.lc_phase == LC_PHASE_PRE_STOP and elapsed >= self.PRE_STOP_SEC:
                 self.advance_lc_phase(now, LC_PHASE_ROTATE_OUT)
             elif self.lc_phase == LC_PHASE_ROTATE_OUT and elapsed >= self.LC_ROT_SEC:
-                self.advance_lc_phase(now, LC_PHASE_STOP1)
-            elif self.lc_phase == LC_PHASE_STOP1 and elapsed >= self.LC_MID_STOP_SEC:
                 self.advance_lc_phase(now, LC_PHASE_STRAIGHT)
             elif self.lc_phase == LC_PHASE_STRAIGHT and elapsed >= self.LC_STRAIGHT_SEC:
-                self.advance_lc_phase(now, LC_PHASE_STOP2)
-            elif self.lc_phase == LC_PHASE_STOP2 and elapsed >= self.LC_MID_STOP_SEC:
                 self.advance_lc_phase(now, LC_PHASE_ROTATE_IN)
             elif self.lc_phase == LC_PHASE_ROTATE_IN and elapsed >= self.LC_ROT_SEC:
-                self.advance_lc_phase(now, LC_PHASE_STOP3)
-            elif self.lc_phase == LC_PHASE_STOP3 and elapsed >= self.LC_MID_STOP_SEC:
                 achieved = self.target_lane
                 self.target_lane = None
                 self.enter_driving(reason=f"(lane change done, target was {achieved})",
-                                   assume_lane=achieved)
+                                assume_lane=achieved)   # 2번 연계
 
         elif self.state == STATE_LEFT_TURN:
             elapsed = now - self.lt_phase_start
@@ -673,13 +690,15 @@ class FsmNode(Node):
             angular_z = 0.0
             speed_scale = 0.0
         elif self.state == STATE_LANE_CHANGE:
-            if self.lc_phase == LC_PHASE_ROTATE_OUT:
+            if self.lc_phase == LC_PHASE_PRE_STOP:
+                cmd, angular_z, speed_scale = CMD_STOP, 0.0, 0.0
+            elif self.lc_phase == LC_PHASE_ROTATE_OUT:
                 cmd, angular_z, speed_scale = CMD_FORWARD, self.lc_az_out, 0.0
             elif self.lc_phase == LC_PHASE_STRAIGHT:
                 cmd, angular_z, speed_scale = CMD_FORWARD, 0.0, 1.0
             elif self.lc_phase == LC_PHASE_ROTATE_IN:
                 cmd, angular_z, speed_scale = CMD_FORWARD, self.lc_az_in, 0.0
-            else:  # PRE_STOP / MID_STOP1 / MID_STOP2 -> 정지
+            else:
                 cmd, angular_z, speed_scale = CMD_STOP, 0.0, 0.0
 
         elif self.state == STATE_LEFT_TURN:
@@ -696,7 +715,9 @@ class FsmNode(Node):
             angular_z = self.latest_lane["angular_z"]
             speed_scale = self.SLOW_SCALE if now < self.slow_until else 1.0
             
-            if self.traffic_light_blocks() or self.left_traffic_light_blocks():
+            if (self.obs_block
+                    or self.traffic_light_blocks()
+                    or self.left_traffic_light_blocks()):
                 cmd = CMD_STOP
                 angular_z = 0.0
                 speed_scale = 0.0
@@ -713,6 +734,12 @@ class FsmNode(Node):
             "current_lane": self.current_lane,
             "lane": self.latest_lane,
             "objects": self.latest_objects,
+            "obstacle": {
+                "block": self.obs_block,
+                "dynamic": self.latest_obstacle.dynamic,
+                "count": self.latest_obstacle.count,
+                "valid": self.latest_obstacle.valid,
+            },
         })
         self.cmd_pub.publish(msg)
 

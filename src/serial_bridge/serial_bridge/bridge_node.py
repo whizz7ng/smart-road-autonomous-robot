@@ -52,7 +52,7 @@ BASE_FRAME = "base_link"
 
 # ===== 직진 trim (오른쪽 쏠림 보정) =====
 WHEEL_TRIM_L = 1.0
-WHEEL_TRIM_R = 1.08    # 오른쪽 쏠리면 이 값을 1.02, 1.04 ... 올려라
+WHEEL_TRIM_R = 1.0    # 오른쪽 쏠리면 이 값을 1.02, 1.04 ... 올려라
 
 def twist_to_wheel_rpm(vx: float, wz: float):
     """linear m/s, angular rad/s -> (rpm_l, rpm_r)."""
@@ -143,32 +143,41 @@ class BridgeNode(Node):
 
     # ===== UART 수신 루프 (50Hz odo -> odom) =====
     def uart_recv_loop(self):
+        buf = b""
         while self.running:
             try:
-                line = self.ser.readline().decode(errors="ignore").strip()
+                chunk = self.ser.read(64)
             except serial.SerialException as e:
                 self.get_logger().warn(f"UART read error: {e}")
-                time.sleep(0.1)
+                time.sleep(0.1); continue
+            if not chunk:
                 continue
+            buf += chunk
+            while b"\n" in buf:
+                line, buf = buf.split(b"\n", 1)
+                line = line.decode(errors="ignore").strip()
+                if not line.startswith("{"):
+                    continue
+                try:
+                    d = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                if d.get("T") != "odo":
+                    continue
+                try:
+                    rl = float(d["rl"]); rr = float(d["rr"]); gz = float(d.get("gz", 0.0))
+                except (KeyError, TypeError, ValueError):
+                    continue
+                self.update_odom(rl, rr, gz)
 
-            if not line.startswith("{"):
-                continue
-
-            try:
-                d = json.loads(line)
-            except json.JSONDecodeError:
-                continue
-
-            if d.get("T") != "odo":
-                continue
-
-            try:
-                rl = float(d["rl"])
-                rr = float(d["rr"])
-                gz = float(d.get("gz", 0.0))   # deg/s (자이로 z, IMU)
-            except (KeyError, TypeError, ValueError):
-                continue
-            self.update_odom(rl, rr, gz)
+                # ===== 임시 Hz 측정 (여기) =====
+                self._n = getattr(self, "_n", 0) + 1
+                if not hasattr(self, "_t0"):
+                    self._t0 = time.time()
+                if time.time() - self._t0 >= 1.0:
+                    self.get_logger().info(f"odo {self._n} Hz")
+                    self._n = 0
+                    self._t0 = time.time()
 
     # ===== 오도메트리 적분 =====
 

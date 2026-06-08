@@ -25,15 +25,16 @@ import rclpy
 from rclpy.duration import Duration
 
 # --- roi_test.py 와 동일 규격 ---
-ROI_FWD_MIN = 0.0
+ROI_FWD_MIN = 0.1
 ROI_FWD_MAX = 1.0
-ROI_SIDE_MIN = -0.5
-ROI_SIDE_MAX = 0.5
+ROI_SIDE_MIN = -0.33
+ROI_SIDE_MAX = 0.33
 ROI_MIN_POINTS = 3
 
 GRID_SIZE = 0.15          # map 격자 크기(m)
 STATIC_HITS = 4           # 연속 N프레임 점유 = 정적
-
+DYNAMIC_MIN_CELLS = 2     # 트리거: 이 이상이면 동적 ON
+DYNAMIC_HOLD = 8          # 켜진 뒤 유지 프레임 (~0.8s @10Hz)
 
 class ObstacleResult:
     __slots__ = ('obstacle', 'dynamic', 'count', 'valid')
@@ -43,6 +44,7 @@ class ObstacleResult:
         self.dynamic = dynamic
         self.count = count
         self.valid = valid
+
 
 
 class ObstacleChecker:
@@ -59,11 +61,12 @@ class ObstacleChecker:
         # 정적/동적 판정 상태
         self.streak = {}              # 칸별 연속 점유 카운트
         self.prev_occupied = set()    # 직전 프레임 점유 격자
+        self.dyn_hold = 0
 
     def _get_tf(self):
         try:
             return self.tf_buffer.lookup_transform(
-                'map', 'base_laser', rclpy.time.Time(),
+                'odom', 'base_laser', rclpy.time.Time(),
                 timeout=Duration(seconds=0.1))
         except (LookupException, ExtrapolationException, ConnectivityException):
             return None
@@ -113,6 +116,9 @@ class ObstacleChecker:
         new_streak = {}
         for cell in occupied:
             new_streak[cell] = self.streak.get(cell, 0) + 1
+        for cell, n in self.streak.items():
+            if cell not in occupied and n - 1 > 0:
+                new_streak[cell] = n - 1   # 안 보인 칸: 리셋 대신 1 감쇠
         self.streak = new_streak
 
         static_cells = {cell for cell, n in self.streak.items() if n >= STATIC_HITS}
@@ -121,6 +127,12 @@ class ObstacleChecker:
             if cell not in static_cells and cell in self.prev_occupied
         }
         self.prev_occupied = occupied
-
-        dynamic = len(dynamic_cells) > 0
+        n_dyn = len(dynamic_cells)
+        if n_dyn >= DYNAMIC_MIN_CELLS:
+            self.dyn_hold = DYNAMIC_HOLD          # 강한 증거 -> 유지 풀충전
+        elif n_dyn >= 1 and self.dyn_hold > 0:
+            self.dyn_hold = DYNAMIC_HOLD          # 동적 진행 중 약한 증거 -> 연장
+        elif self.dyn_hold > 0:
+            self.dyn_hold -= 1                    # 증거 없음 -> 감쇠
+        dynamic = self.dyn_hold > 0
         return ObstacleResult(obstacle, dynamic, count, True)
