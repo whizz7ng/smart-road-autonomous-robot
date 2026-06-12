@@ -114,7 +114,7 @@ class FsmNode(Node):
         self.declare_parameter("view_width_cm", 51.0)    # 화면 가로 실제 길이
         self.declare_parameter("steer_kp", 0.02)        # (rad/s) / cm
         self.declare_parameter("steer_max", 0.6)         # rad/s clamp
-        self.declare_parameter("steer_deadband_cm", 0.5)
+        self.declare_parameter("steer_deadband_cm", 0)
         # 차선 변경 (오픈 루프)
         self.declare_parameter("lane_change_rotate_az",  1.6)   # rad/s, 회전 각속도 크기 (>0)
         self.declare_parameter("lane_change_rotate_sec", 0.7)   # s, 한 번 회전 지속
@@ -150,7 +150,7 @@ class FsmNode(Node):
         self.declare_parameter("left_turn_straight_dist_m", 0.50)
         self.declare_parameter("left_turn_straight_speed",  0.23)  # = forward_speed
         self.declare_parameter("left_turn_curve_dist_m",    1.00)
-        self.declare_parameter("left_turn_curve_deg",       90.0)
+        self.declare_parameter("left_turn_curve_deg",       -90.0)
         self.declare_parameter("left_turn_curve_speed",     0.15)  # 곡선 선속도(천천히)
         self.declare_parameter("left_turn_cooldown_sec",    8.0)
         self.declare_parameter("pre_maneuver_stop_sec", 0.3)
